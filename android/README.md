@@ -31,7 +31,7 @@ android/gradlew -p android assembleDebug
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-也可以在 Android Studio 中打开 `android`并运行 `app`。生成的调试 APK 位于 `android/app/build/outputs/apk/debug/app-debug.apk`。
+也可以在 Android Studio 中打开 `android` 并运行 `app`。生成的调试 APK 位于 `android/app/build/outputs/apk/debug/app-debug.apk`。
 
 ## 开源说明
 
