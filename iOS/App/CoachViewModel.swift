@@ -39,6 +39,8 @@ final class CoachViewModel: ObservableObject {
     private var variationPreviewTask: Task<Void, Never>?
     private var computerMoveTask: Task<Void, Never>?
     private var scoreBackfillTask: Task<Void, Never>?
+    private var positionAnalysisTask: Task<Void, Never>?
+    private var selectionAnalysisTask: Task<Void, Never>?
 
     var position: ParsedPosition { ParsedPosition.parse(fen: fen) }
     var pieces: [BoardPiece] { position.pieces }
@@ -397,12 +399,16 @@ final class CoachViewModel: ObservableObject {
 
     func play(_ move: String) {
         guard gameMode != .setup, !isApplyingMove, legalMoves.contains(move) else { return }
+        guard let points = ChineseNotation.coordinates(move),
+              let movingPiece = pieces.first(where: {
+                  $0.file == points.fromFile && $0.rank == points.fromRank
+              })
+        else { return }
         cancelComputerMove()
         stopAllPreviews()
         previewedCandidateMove = nil
         let oldFEN = fen
         let oldPieces = pieces
-        let oldLegalMoves = legalMoves
         let basePly = activePly
         let record = MoveRecord(
             beforeFEN: oldFEN,
@@ -413,38 +419,41 @@ final class CoachViewModel: ObservableObject {
             wasEngineBest: globalBestMove == move,
             bestBefore: globalBestMove.map { ChineseNotation.name(for: $0, pieces: oldPieces) }
         )
-        let generation = UUID()
-        moveGeneration = generation
         positionGeneration = UUID()
         selectionGeneration = UUID()
+        positionAnalysisTask?.cancel()
+        selectionAnalysisTask?.cancel()
         engine.stop()
         scoreBackfillTask?.cancel()
-        isApplyingMove = true
         isAnalyzing = false
         isAnalyzingSelection = false
-        legalMoves = []
         globalLines = []
         clearSelection()
         errorMessage = nil
-        Task {
-            do {
-                let newFEN = try await engine.apply(move: move, to: oldFEN)
-                guard moveGeneration == generation, fen == oldFEN, activePly == basePly else { return }
-                if basePly < history.count { history.removeSubrange(basePly...) }
-                positionScores = positionScores.filter { $0.key <= basePly }
-                history.append(record)
-                fen = newFEN
-                activePly = basePly + 1
-                timelineEndFEN = newFEN
-                isApplyingMove = false
-                refreshAnalysis()
-            } catch {
-                guard moveGeneration == generation, fen == oldFEN else { return }
-                isApplyingMove = false
-                legalMoves = oldLegalMoves
-                errorMessage = error.localizedDescription
-            }
+
+        // The move is already known to be legal. Apply it to the lightweight UI
+        // model immediately instead of waiting behind a cancelled engine search.
+        // Pikafish is then restarted asynchronously for the new position.
+        var updated = oldPieces.filter {
+            !($0.file == points.fromFile && $0.rank == points.fromRank) &&
+            !($0.file == points.toFile && $0.rank == points.toRank)
         }
+        updated.append(BoardPiece(
+            side: movingPiece.side,
+            kind: movingPiece.kind,
+            file: points.toFile,
+            rank: points.toRank
+        ))
+        let newFEN = Self.makeFEN(pieces: updated, side: sideToMove.opposite)
+        if basePly < history.count { history.removeSubrange(basePly...) }
+        positionScores = positionScores.filter { $0.key <= basePly }
+        history.append(record)
+        fen = newFEN
+        activePly = basePly + 1
+        timelineEndFEN = newFEN
+        isApplyingMove = false
+        legalMoves = []
+        refreshAnalysis()
     }
 
     func undo() {
@@ -528,6 +537,7 @@ final class CoachViewModel: ObservableObject {
         let depthAtStart = analysisDepth
         let generation = UUID()
         selectionGeneration = generation
+        selectionAnalysisTask?.cancel()
 
         guard !moves.isEmpty else {
             isAnalyzingSelection = false
@@ -535,7 +545,7 @@ final class CoachViewModel: ObservableObject {
         }
         engine.stop()
         scoreBackfillTask?.cancel()
-        Task {
+        selectionAnalysisTask = Task {
             do {
                 let lines = try await engine.analyze(
                     fen: fenAtStart,
@@ -561,6 +571,8 @@ final class CoachViewModel: ObservableObject {
     }
 
     private func clearSelection() {
+        selectionAnalysisTask?.cancel()
+        selectionAnalysisTask = nil
         selectionGeneration = UUID()
         selectedSquare = nil
         selectedLines = []
@@ -569,6 +581,7 @@ final class CoachViewModel: ObservableObject {
 
     private func refreshAnalysis() {
         guard gameMode != .setup else { return }
+        positionAnalysisTask?.cancel()
         let fenAtStart = fen
         let depthAtStart = analysisDepth
         let generation = UUID()
@@ -579,7 +592,7 @@ final class CoachViewModel: ObservableObject {
         globalLines = []
         legalMoves = []
 
-        Task {
+        positionAnalysisTask = Task {
             do {
                 let moves = try await engine.legalMoves(fen: fenAtStart)
                 guard positionGeneration == generation,

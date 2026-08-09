@@ -32,9 +32,9 @@ final class CoachController {
     private final ExecutorService engineQueue = Executors.newSingleThreadExecutor();
     private Listener listener;
     private boolean initialized;
-    private int positionGeneration;
-    private int selectionGeneration;
-    private int backfillGeneration;
+    private volatile int positionGeneration;
+    private volatile int selectionGeneration;
+    private volatile int backfillGeneration;
 
     String fen = INITIAL_FEN;
     List<String> legalMoves = new ArrayList<>();
@@ -211,52 +211,51 @@ final class CoachController {
 
     void play(String move) {
         if (gameMode == GameMode.SETUP || !legalMoves.contains(move)) return;
+        MoveCoordinates points = ChineseNotation.coordinates(move);
+        if (points == null) return;
         cancelComputerMove();
         previewedCandidateMove = null;
         PikafishNative.stop();
         backfillGeneration++;
-        final int generation = ++positionGeneration;
         final String oldFen = fen;
         final int basePly = activePly;
-        final List<String> previousLegalMoves = new ArrayList<>(legalMoves);
         List<BoardPiece> oldPieces = pieces();
+        BoardPiece movingPiece = null;
+        for (BoardPiece piece : oldPieces) {
+            if (piece.file == points.fromFile && piece.rank == points.fromRank) {
+                movingPiece = piece;
+                break;
+            }
+        }
+        if (movingPiece == null) return;
         Integer before = globalLines.isEmpty() ? null : globalLines.get(0).centipawns();
         String bestMove = globalBestMove();
         MoveRecord record = new MoveRecord(oldFen, move, ChineseNotation.name(move, oldPieces), sideToMove(), before,
                 move.equals(bestMove), bestMove == null ? null : ChineseNotation.name(bestMove, oldPieces));
         errorMessage = null;
-        analyzing = true;
-        legalMoves = new ArrayList<>();
+        analyzing = false;
         globalLines = new ArrayList<>();
         clearSelection();
-        notifyChanged();
 
-        engineQueue.execute(() -> {
-            try {
-                ensureInitialized();
-                String newFen = PikafishNative.applyMove(oldFen, move);
-                if (newFen.startsWith("error:")) throw new IllegalStateException(newFen.substring(6));
-                main.post(() -> {
-                    if (positionGeneration != generation || !fen.equals(oldFen) || activePly != basePly) return;
-                    while (history.size() > basePly) history.remove(history.size() - 1);
-                    positionScores.keySet().removeIf(ply -> ply > basePly);
-                    history.add(record);
-                    fen = newFen;
-                    activePly = basePly + 1;
-                    timelineEndFen = newFen;
-                    clearSelection();
-                    refreshAnalysis();
-                });
-            } catch (Exception error) {
-                main.post(() -> {
-                    if (positionGeneration != generation) return;
-                    errorMessage = error.getMessage();
-                    analyzing = false;
-                    legalMoves = previousLegalMoves;
-                    notifyChanged();
-                });
-            }
-        });
+        // The move has already passed Pikafish's legal-move check. Update the
+        // board synchronously so a stopped search can never delay touch input.
+        List<BoardPiece> updated = new ArrayList<>();
+        for (BoardPiece piece : oldPieces) {
+            boolean origin = piece.file == points.fromFile && piece.rank == points.fromRank;
+            boolean destination = piece.file == points.toFile && piece.rank == points.toRank;
+            if (!origin && !destination) updated.add(piece);
+        }
+        updated.add(new BoardPiece(movingPiece.side, movingPiece.kind, points.toFile, points.toRank));
+        String newFen = makeFen(updated, sideToMove() == Side.RED ? Side.BLACK : Side.RED);
+        while (history.size() > basePly) history.remove(history.size() - 1);
+        positionScores.keySet().removeIf(ply -> ply > basePly);
+        history.add(record);
+        fen = newFen;
+        activePly = basePly + 1;
+        timelineEndFen = newFen;
+        legalMoves = new ArrayList<>();
+        clearSelection();
+        refreshAnalysis();
     }
 
     void undo() {
@@ -448,7 +447,9 @@ final class CoachController {
         backfillGeneration++;
         engineQueue.execute(() -> {
             try {
+                if (selectionGeneration != generation) return;
                 ensureInitialized();
+                if (selectionGeneration != generation) return;
                 List<EngineLine> lines = analyze(fenAtStart, depthAtStart, Math.min(12, moves.size()), moves);
                 main.post(() -> {
                     if (selectionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
@@ -487,13 +488,16 @@ final class CoachController {
 
         engineQueue.execute(() -> {
             try {
+                if (positionGeneration != generation) return;
                 ensureInitialized();
+                if (positionGeneration != generation) return;
                 List<String> moves = parseMoves(PikafishNative.legalMoves(fenAtStart));
                 main.post(() -> {
                     if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
                     legalMoves = moves;
                     notifyChanged();
                 });
+                if (positionGeneration != generation) return;
                 List<EngineLine> lines = analyze(fenAtStart, depthAtStart, 5, Collections.emptyList());
                 main.post(() -> {
                     if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
@@ -633,7 +637,9 @@ final class CoachController {
             }
         }
         int processors = Runtime.getRuntime().availableProcessors();
-        int threads = Math.max(1, Math.min(4, processors - 1));
+        // Reserve CPU capacity for rendering and touch handling while the engine
+        // searches in the background.
+        int threads = Math.max(1, Math.min(3, processors - 2));
         String response = PikafishNative.initialize(network.getAbsolutePath(), threads, 64);
         if (!"ready".equals(response)) throw new IllegalStateException(response.startsWith("error:") ? response.substring(6) : response);
         initialized = true;

@@ -7,12 +7,14 @@ import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const enginePath = join(root, ".local", "pikafish", "pikafish");
-const threadCount = Math.max(1, Math.min(8, cpus().length - 1));
+// Leave enough CPU capacity for the browser and input/rendering work.
+const threadCount = Math.max(1, Math.min(3, cpus().length - 2));
 const port = Number(process.env.PIKAFISH_PORT ?? 8788);
 const engine = spawn(enginePath, [], { cwd: join(root, ".local", "pikafish"), stdio: ["pipe", "pipe", "inherit"] });
 const lines = createInterface({ input: engine.stdout });
 let pending = null;
 let queue = Promise.resolve();
+let requestedGeneration = 0;
 
 lines.on("line", line => {
   if (!pending) return;
@@ -52,12 +54,23 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
   if (req.url === "/health") { res.writeHead(200, { ...cors, "Content-Type": "application/json" }); res.end(JSON.stringify({ engine: "Pikafish", mode: "native", threads: threadCount, network: "local" })); return; }
-  if (req.url === "/stop" && req.method === "POST") { command("stop"); res.writeHead(204, cors); res.end(); return; }
+  if (req.url === "/stop" && req.method === "POST") {
+    requestedGeneration++;
+    command("stop");
+    res.writeHead(204, cors);
+    res.end();
+    return;
+  }
   if (req.url !== "/analyze" || req.method !== "POST") { res.writeHead(404, cors); res.end(); return; }
   let body = "";
   req.on("data", chunk => { body += chunk; });
   req.on("end", () => {
+    const generation = ++requestedGeneration;
+    // Interrupt the running request immediately. Queued requests check the
+    // generation below, so only the newest position is allowed to start.
+    command("stop");
     queue = queue.then(async () => {
+      if (generation !== requestedGeneration || res.destroyed) return;
       try { const result = await analyze(JSON.parse(body)); if (!res.destroyed) { res.writeHead(200, { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(result)); } }
       catch (error) { if (!res.destroyed) { res.writeHead(500, cors); res.end(JSON.stringify({ error: String(error) })); } }
     });
