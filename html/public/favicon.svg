@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d55d38"/><stop offset="1" stop-color="#9e2f21"/></linearGradient>
+    <radialGradient id="piece"><stop stop-color="#fff8dd"/><stop offset="1" stop-color="#efd8a7"/></radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="25" fill="url(#bg)"/>
+  <rect x="8" y="8" width="112" height="112" rx="21" fill="none" stroke="#ef9b6a" stroke-width="4"/>
+  <circle cx="64" cy="64" r="45" fill="url(#piece)" stroke="#8e251c" stroke-width="4"/>
+  <circle cx="64" cy="64" r="38" fill="none" stroke="#c85135" stroke-width="2"/>
+  <text x="64" y="65" text-anchor="middle" dominant-baseline="central" font-family="Songti SC, STSong, serif" font-size="58" font-weight="600" fill="#2b302b">象</text>
+</svg>

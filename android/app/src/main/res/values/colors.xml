@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="paper">#F8F5EA</color>
+    <color name="ink">#1A1F1A</color>
+    <color name="coach_green">#175740</color>
+    <color name="coach_red">#BA2B21</color>
+</resources>

@@ -1,0 +1,27 @@
+.DS_Store
+
+# HTML dependencies and generated output
+/html/node_modules/
+/html/.local/
+/html/.vinext/
+/html/.vite/
+/html/.wrangler/
+/html/dist/
+/html/coverage/
+/html/tsconfig.tsbuildinfo
+
+# Android machine-local and generated output
+/android/.gradle/
+/android/local.properties
+/android/**/.cxx/
+/android/**/build/
+
+# Xcode generated output and user state
+/iOS/build/
+/iOS/DerivedData/
+/iOS/**/*.xcuserdatad/
+/iOS/**/*.xcuserstate
+
+# Environment and debug files
+.env*
+*.log
