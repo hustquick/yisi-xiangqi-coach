@@ -63,4 +63,5 @@
 
 .board-wrap{scroll-margin-top:12px}
 .candidate.previewing{border-color:#4f8768;background:#e8f4eb;box-shadow:inset 3px 0 0 #2b6d4c}
+.move-red,.move-red>strong{color:#b52f26!important}.move-black,.move-black>strong{color:#171b18!important}
 .variation-playback>i{display:grid;place-items:center;min-width:29px;height:24px;padding:0 6px;border-radius:999px;background:#245f43;color:#fff;font:700 11px Arial;font-style:normal}

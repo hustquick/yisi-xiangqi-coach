@@ -601,6 +601,15 @@ final class CoachViewModel: ObservableObject {
                 else { return }
                 legalMoves = moves
 
+                // Publish legal moves first and leave a render window before
+                // starting the CPU-heavy search. A move during this window
+                // cancels this stale task before Pikafish starts thinking.
+                try await Task.sleep(nanoseconds: 80_000_000)
+                guard !Task.isCancelled,
+                      positionGeneration == generation,
+                      fen == fenAtStart,
+                      analysisDepth == depthAtStart
+                else { return }
                 let lines = try await engine.analyze(fen: fenAtStart, depth: depthAtStart, multiPV: 5)
                 guard positionGeneration == generation,
                       fen == fenAtStart,

@@ -9,6 +9,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -388,7 +391,7 @@ public final class MainActivity extends Activity implements CoachController.List
             reviewTag.setText(controller.analyzingSelection ? "分析中" : controller.selectedIsGlobalBest() ? "全局最优" : "本子首选");
             reviewTitle.setText(selected.name() + "怎么走");
             if (controller.selectedLines.isEmpty()) reviewSummary.setText("正在比较这枚棋子的合法着法…");
-            else reviewSummary.setText(controller.notation(controller.selectedLines.get(0)) + " · 走后评分 " + controller.scoreText(controller.selectedLines.get(0)));
+            else reviewSummary.setText(coloredMoveText("", controller.notation(controller.selectedLines.get(0)), " · 走后评分 " + controller.scoreText(controller.selectedLines.get(0)), controller.sideToMove()));
             reviewDetail.setText(controller.selectedIsGlobalBest()
                     ? "这枚棋子的首选与全局第一候选评分相同，属于全局最优着法。"
                     : "共 " + controller.selectedLegalMoves().size() + " 个合法落点。绿色表示本子首选；当前评分低于全局首选。");
@@ -401,7 +404,7 @@ public final class MainActivity extends Activity implements CoachController.List
             CoachController.Review review = controller.review();
             reviewTag.setText(review.grade);
             MoveRecord activeMove = controller.activeMove();
-            reviewTitle.setText(activeMove == null ? "等待落子" : activeMove.notation);
+            reviewTitle.setText(activeMove == null ? "等待落子" : coloredMoveText("", activeMove.notation, "", activeMove.mover));
             reviewSummary.setText(review.summary);
             reviewDetail.setText(review.detail);
         }
@@ -412,7 +415,7 @@ public final class MainActivity extends Activity implements CoachController.List
             globalBest.setText("全局最优着法\n正在计算…");
         } else {
             EngineLine best = controller.globalLines.get(0);
-            globalBest.setText("全局最优着法\n" + controller.notation(best) + "    最佳\n走后评分 " + controller.scoreText(best) + " · 深度 " + best.depth);
+            globalBest.setText(coloredMoveText("全局最优着法\n", controller.notation(best), "    最佳\n走后评分 " + controller.scoreText(best) + " · 深度 " + best.depth, controller.sideToMove()));
             installCandidateTap(globalBest, best);
         }
 
@@ -437,9 +440,10 @@ public final class MainActivity extends Activity implements CoachController.List
             String nodes = line.nodes >= 1_000_000
                     ? String.format(Locale.CHINA, "%.1fM", line.nodes / 1_000_000.0)
                     : line.nodes >= 1_000 ? String.format(Locale.CHINA, "%.0fK", line.nodes / 1_000.0) : String.valueOf(line.nodes);
-            TextView row = label((index + 1) + "    " + controller.notation(line) + "                    " + quality
+            TextView row = label("", 13, INK, Typeface.BOLD);
+            row.setText(coloredMoveText((index + 1) + "    ", controller.notation(line), "                    " + quality
                     + "\n      " + (index == 0 ? "皮卡鱼首选" : "深度 " + line.depth + " · " + nodes + " 节点")
-                    + "                          走后 " + controller.scoreText(line), 13, INK, Typeface.BOLD);
+                    + "                          走后 " + controller.scoreText(line), controller.sideToMove()));
             row.setLineSpacing(dp(2), 1f);
             row.setPadding(dp(10), dp(9), dp(10), dp(9));
             boolean highlighted = controller.previewedCandidateMove == null
@@ -453,14 +457,25 @@ public final class MainActivity extends Activity implements CoachController.List
     }
 
     private void renderHistory() {
-        StringBuilder text = new StringBuilder();
+        SpannableStringBuilder text = new SpannableStringBuilder();
         for (int index = 0; index < controller.history.size(); index++) {
             MoveRecord record = controller.history.get(index);
             if (index > 0) text.append("     ");
-            text.append(index / 2 + 1).append(record.mover == Side.RED ? ". " : "… ").append(record.notation);
+            text.append(String.valueOf(index / 2 + 1)).append(record.mover == Side.RED ? ". " : "… ");
+            int moveStart = text.length();
+            text.append(record.notation);
+            text.setSpan(new ForegroundColorSpan(moveColor(record.mover)), moveStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         historyText.setText(text.toString());
         historyText.setVisibility(controller.history.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private int moveColor(Side side) { return side == Side.RED ? RED : INK; }
+
+    private CharSequence coloredMoveText(String prefix, String notation, String suffix, Side side) {
+        SpannableStringBuilder text = new SpannableStringBuilder(prefix).append(notation).append(suffix);
+        text.setSpan(new ForegroundColorSpan(moveColor(side)), prefix.length(), prefix.length() + notation.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text;
     }
 
     private void installCandidateTap(View view, EngineLine line) {

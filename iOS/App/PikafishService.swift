@@ -35,7 +35,10 @@ private final class EngineCancellationFlag: @unchecked Sendable {
 final class PikafishService: @unchecked Sendable {
     static let shared = PikafishService()
 
-    private let queue = DispatchQueue(label: "com.yisi.pikafish", qos: .userInitiated)
+    // Engine work must never compete with touch handling and SwiftUI rendering.
+    // A utility queue plus a single search thread is deliberately conservative:
+    // analysis takes a little longer, but moving a piece remains the priority.
+    private let queue = DispatchQueue(label: "com.yisi.pikafish", qos: .utility)
     private var initialized = false
 
     func stop() {
@@ -92,13 +95,8 @@ final class PikafishService: @unchecked Sendable {
         guard let network = Bundle.main.path(forResource: "pikafish", ofType: "nnue") else {
             throw PikafishError.missingNetwork
         }
-        let processorCount = ProcessInfo.processInfo.activeProcessorCount
-        // Keep at least two CPU cores available for SwiftUI, touch handling and
-        // system work. Search throughput is slightly lower, but the board stays
-        // responsive while Pikafish is thinking.
-        let threads = max(1, min(3, processorCount - 2))
         let response: String = network.withCString { pointer in
-            guard let result = pf_initialize(pointer, Int32(threads), 64) else { return "" }
+            guard let result = pf_initialize(pointer, 1, 64) else { return "" }
             return String(cString: result)
         }
         if response.hasPrefix("error:") { throw PikafishError.engine(String(response.dropFirst(6))) }

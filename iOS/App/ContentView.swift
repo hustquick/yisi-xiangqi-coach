@@ -285,7 +285,7 @@ struct ContentView: View {
             }
             if let line = viewModel.selectedLines.first {
                 Text("\(viewModel.notation(for: line)) · 走后评分 \(viewModel.scoreText(for: line))")
-                    .font(.title3.bold()).foregroundStyle(green)
+                    .font(.title3.bold()).foregroundStyle(moveColor(for: viewModel.sideToMove))
             }
             Text(viewModel.selectedIsGlobalBest
                  ? "这枚棋子的首选与全局第一候选评分相同，属于全局最优着法。"
@@ -303,6 +303,7 @@ struct ContentView: View {
                 Text(review.grade).font(.caption.bold()).foregroundStyle(.white)
                     .padding(.horizontal, 7).padding(.vertical, 4).background(green)
                 Text(viewModel.activeMove?.notation ?? "等待落子").font(.headline)
+                    .foregroundStyle(viewModel.activeMove.map { moveColor(for: $0.mover) } ?? ink)
                 Spacer()
             }
             Text(review.summary).font(.subheadline.bold())
@@ -319,6 +320,7 @@ struct ContentView: View {
                 HStack {
                     VStack(alignment: .leading) {
                         Text(viewModel.notation(for: best)).font(.headline)
+                            .foregroundStyle(moveColor(for: viewModel.sideToMove))
                         Text("走后评分 \(viewModel.scoreText(for: best)) · 深度 \(best.depth)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -344,6 +346,7 @@ struct ContentView: View {
             Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.notation(for: line)).font(.subheadline.bold())
+                    .foregroundStyle(moveColor(for: viewModel.sideToMove))
                 Text(index == 0 ? "皮卡鱼首选" : "深度 \(line.depth) · \(formattedNodes(line.nodes)) 节点")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -393,7 +396,7 @@ struct ContentView: View {
                     HStack {
                         historyButton(title: "开局", ply: 0)
                         ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, record in
-                            historyButton(title: "\(index / 2 + 1)\(record.mover == .red ? "." : "…") \(record.notation)", ply: index + 1)
+                            historyButton(title: "\(index / 2 + 1)\(record.mover == .red ? "." : "…") \(record.notation)", ply: index + 1, side: record.mover)
                         }
                     }
                 }
@@ -428,16 +431,21 @@ struct ContentView: View {
         .panelStyle()
     }
 
-    private func historyButton(title: String, ply: Int) -> some View {
+    private func historyButton(title: String, ply: Int, side: XiangqiSide? = nil) -> some View {
         let isCurrent = viewModel.activePly == ply
         let isFuture = ply > viewModel.activePly
         return Button(title) { viewModel.goToPly(ply) }
             .font(.caption.weight(isCurrent ? .bold : .medium))
-            .foregroundStyle(isCurrent ? green : ink.opacity(isFuture ? 0.46 : 0.82))
+            .foregroundStyle(side.map { moveColor(for: $0).opacity(isFuture ? 0.46 : 1) }
+                ?? (isCurrent ? green : ink.opacity(isFuture ? 0.46 : 0.82)))
             .padding(.horizontal, 9).padding(.vertical, 6)
             .background(isCurrent ? green.opacity(0.12) : .white.opacity(0.6), in: Capsule())
             .overlay(Capsule().stroke(isCurrent ? green.opacity(0.7) : .gray.opacity(isFuture ? 0.18 : 0.28)))
             .buttonStyle(.plain)
+    }
+
+    private func moveColor(for side: XiangqiSide) -> Color {
+        side == .red ? red : ink
     }
 
     private func panelTitle(number: String, chinese: String, english: String) -> some View {

@@ -2083,7 +2083,7 @@ export default function Home() {
               {selectedPiece ? "建议" : analysis.grade}
             </span>
             <div>
-              <strong>
+              <strong className={!selectedPiece && lastMove ? `move-${lastMove.piece.side}` : undefined}>
                 {selectedPiece
                   ? `${selectedPiece.name}怎么走`
                   : lastMove
@@ -2131,7 +2131,7 @@ export default function Home() {
                 onDoubleClick={() => playCandidate(candidates[0])}
                 title={`单击演示变化 · 双击走 ${candidates[0].move}`}
               >
-                <strong>{candidates[0].move}</strong>
+                <strong className={`move-${turn}`}>{candidates[0].move}</strong>
                 <em>
                   走后评分 {candidates[0].score} · 深度{" "}
                   {engineLines[0]?.depth ?? analysisDepth}
@@ -2182,7 +2182,7 @@ export default function Home() {
           >
             {shownCandidates.map((c, i) => (
               <div
-                className={`candidate ${previewedCandidateMove ? (c.uciMoves[0] === previewedCandidateMove ? "previewing" : "") : c.tone}`}
+                className={`candidate move-${turn} ${previewedCandidateMove ? (c.uciMoves[0] === previewedCandidateMove ? "previewing" : "") : c.tone}`}
                 key={`${c.move}-${i}`}
                 onClick={() => scheduleCandidatePreview(c)}
                 onDoubleClick={() => playCandidate(c)}
@@ -2261,13 +2261,13 @@ export default function Home() {
               {history.map((m, i) => (
                 <button
                   key={i}
-                  className={
+                  className={`move-${m.piece.side} ${
                     activePly === i + 1
                       ? "current"
                       : activePly < i + 1
                         ? "future"
                         : "past"
-                  }
+                  }`}
                   onClick={() => goToPly(i + 1)}
                 >
                   {Math.floor(i / 2) + 1}
