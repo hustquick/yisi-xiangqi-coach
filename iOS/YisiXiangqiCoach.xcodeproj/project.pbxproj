@@ -9,6 +9,7 @@
 		DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3C674C49F9230A78013C04 /* CoachViewModel.swift */; };
 		FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA066BDAE191C6841E031821 /* ContentView.swift */; };
 		42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B177F71919F3F1954FEC147 /* Models.swift */; };
+		A11B22C33D44E55F66778899 /* GameRecordIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11B22C33D44E55F66778899 /* GameRecordIO.swift */; };
 		FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */; };
 		95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14AFC80628C6ED48441B5DEE /* SituationChartView.swift */; };
 		384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */; };
@@ -58,6 +59,7 @@
 		7E3C674C49F9230A78013C04 /* CoachViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CoachViewModel.swift; sourceTree = "<group>"; };
 		BA066BDAE191C6841E031821 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/ContentView.swift; sourceTree = "<group>"; };
 		4B177F71919F3F1954FEC147 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/Models.swift; sourceTree = "<group>"; };
+		B11B22C33D44E55F66778899 /* GameRecordIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/GameRecordIO.swift; sourceTree = "<group>"; };
 		5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PikafishService.swift; sourceTree = "<group>"; };
 		14AFC80628C6ED48441B5DEE /* SituationChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SituationChartView.swift; sourceTree = "<group>"; };
 		D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/XiangqiBoardView.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				7E3C674C49F9230A78013C04 /* CoachViewModel.swift */,
 				BA066BDAE191C6841E031821 /* ContentView.swift */,
 				4B177F71919F3F1954FEC147 /* Models.swift */,
+				B11B22C33D44E55F66778899 /* GameRecordIO.swift */,
 				5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */,
 				14AFC80628C6ED48441B5DEE /* SituationChartView.swift */,
 				D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */,
@@ -243,7 +246,8 @@
 		F612CD2E22E187AC48B5913C /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 			DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */,
 			FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */,
-			42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */,
+				42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */,
+				A11B22C33D44E55F66778899 /* GameRecordIO.swift in Sources */,
 			FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */,
 			95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */,
 			384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */,

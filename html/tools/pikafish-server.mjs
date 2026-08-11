@@ -1,14 +1,18 @@
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { cpus } from "node:os";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const enginePath = join(root, ".local", "pikafish", "pikafish");
-// Leave enough CPU capacity for the browser and input/rendering work.
-const threadCount = Math.max(1, Math.min(3, cpus().length - 2));
+const logicalCores = availableParallelism();
+const requestedThreads = Number(process.env.PIKAFISH_THREADS);
+// Use multiple cores by default while reserving capacity for the browser.
+const threadCount = Number.isFinite(requestedThreads)
+  ? Math.max(1, Math.min(logicalCores, Math.trunc(requestedThreads)))
+  : Math.max(1, Math.min(4, logicalCores > 2 ? logicalCores - 1 : logicalCores));
 const port = Number(process.env.PIKAFISH_PORT ?? 8788);
 const engine = spawn(enginePath, [], { cwd: join(root, ".local", "pikafish"), stdio: ["pipe", "pipe", "inherit"] });
 const lines = createInterface({ input: engine.stdout });

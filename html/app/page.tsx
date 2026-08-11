@@ -6,8 +6,15 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+
+function Collapsible({ title, children, open = false }: { title: string; children: ReactNode; open?: boolean }) {
+  const [expanded, setExpanded] = useState(open);
+  return <details className="collapsible-module" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}><summary>{title}</summary><div className="collapsible-content">{children}</div></details>;
+}
+import { parseFen, parseXqf, SAVED_GAME_VERSION } from "./game-record";
 
 type Side = "red" | "black";
 type GameMode = "local" | "computer" | "setup";
@@ -132,6 +139,12 @@ function engineCp(line?: EngineLine) {
 
 function redPerspectiveValue(value: number, sideToMove: Side) {
   return sideToMove === "red" ? value : -value;
+}
+
+function sideAfterPly(startingTurn: Side, ply: number): Side {
+  return ply % 2 === 0
+    ? startingTurn
+    : startingTurn === "red" ? "black" : "red";
 }
 
 function redPerspectiveScore(
@@ -396,8 +409,8 @@ function positionFen(pieces: Piece[], turn: Side, ply: number) {
   return `${ranks.join("/")} ${turn === "red" ? "w" : "b"} - - 0 ${Math.floor(ply / 2) + 1}`;
 }
 
-function positionAtPly(history: Move[], ply: number) {
-  let position = initialPieces.map((piece) => ({ ...piece }));
+function positionAtPly(history: Move[], ply: number, startingPieces = initialPieces) {
+  let position = startingPieces.map((piece) => ({ ...piece }));
   for (const move of history.slice(0, ply)) {
     position = position
       .filter((piece) => piece.id !== move.captured?.id)
@@ -762,6 +775,7 @@ function SituationChart({
   flipped,
   onPreviewPly,
   onSelectPly,
+  startingPieces,
 }: {
   points: EvaluationPoint[];
   history: Move[];
@@ -770,6 +784,7 @@ function SituationChart({
   flipped: boolean;
   onPreviewPly: (ply: number | null) => void;
   onSelectPly: (ply: number) => void;
+  startingPieces: Piece[];
 }) {
   const width = 960,
     height = 270;
@@ -1073,7 +1088,7 @@ function SituationChart({
         {scrubPly != null && (
           <div className="timeline-preview">
             <MiniBoard
-              pieces={positionAtPly(history, scrubPly)}
+              pieces={positionAtPly(history, scrubPly, startingPieces)}
               flipped={flipped}
             />
             <strong>{scrubPly === 0 ? "开局" : `第 ${scrubPly} 步后`}</strong>
@@ -1091,6 +1106,19 @@ function SituationChart({
 
 export default function Home() {
   const [pieces, setPieces] = useState(initialPieces);
+  const [startingPieces, setStartingPieces] = useState<Piece[]>(initialPieces);
+  const [startingTurn, setStartingTurn] = useState<Side>("red");
+  const [recordTitle, setRecordTitle] = useState("新对局");
+  const [recordMessage, setRecordMessage] = useState("");
+  const [showRecordPanel, setShowRecordPanel] = useState(false);
+  const [fenInput, setFenInput] = useState("");
+  const [savedGames, setSavedGames] = useState<Array<{ id: string; title: string; savedAt: string }>>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const index = JSON.parse(localStorage.getItem("yisi-xiangqi-saves") || "[]");
+      return Array.isArray(index) ? index : [];
+    } catch { return []; }
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const [turn, setTurn] = useState<Side>("red");
   const [history, setHistory] = useState<Move[]>([]);
@@ -1143,6 +1171,7 @@ export default function Home() {
     busy: false,
   });
   const boardSectionRef = useRef<HTMLDivElement | null>(null);
+  const recordFileRef = useRef<HTMLInputElement | null>(null);
   const setupIdRef = useRef(1);
   const aiPositionRef = useRef("");
   const selectedPiece = pieces.find((p) => p.id === selected);
@@ -1212,7 +1241,7 @@ export default function Home() {
       )
     : timelinePreviewPly == null
       ? pieces
-      : positionAtPly(history, timelinePreviewPly);
+      : positionAtPly(history, timelinePreviewPly, startingPieces);
   const evaluationPoints = useMemo<EvaluationPoint[]>(() => {
     const currentScore = engineCp(engineLines[0]);
     return Array.from({ length: history.length + 1 }, (_, ply) => {
@@ -1387,14 +1416,14 @@ export default function Home() {
       (_, ply) => ply,
     ).find((ply) => ply !== activePly && positionScores[ply] == null);
     if (missingPly == null) return;
-    const side: Side = missingPly % 2 === 0 ? "red" : "black";
+    const side = sideAfterPly(startingTurn, missingPly);
     const id = ++backfillRef.current.id;
     backfillRef.current = { id, ply: missingPly, side, busy: true };
     workerRef.current.postMessage({
       type: "analyze",
       scope: "backfill",
       id,
-      fen: positionFen(positionAtPly(history, missingPly), side, missingPly),
+      fen: positionFen(positionAtPly(history, missingPly, startingPieces), side, missingPly),
       depth: Math.min(10, analysisDepth),
       multiPV: 1,
     });
@@ -1408,6 +1437,8 @@ export default function Home() {
     analysisDepth,
     backfillVersion,
     positionScores,
+    startingPieces,
+    startingTurn,
   ]);
 
   useEffect(() => {
@@ -1618,9 +1649,9 @@ export default function Home() {
     requestRef.current++;
     selectedRequestRef.current++;
     workerRef.current?.postMessage({ type: "stop" });
-    setPieces(positionAtPly(history, targetPly));
+    setPieces(positionAtPly(history, targetPly, startingPieces));
     setActivePly(targetPly);
-    setTurn(targetPly % 2 === 0 ? "red" : "black");
+    setTurn(sideAfterPly(startingTurn, targetPly));
     setSelected(null);
     setSelectedEngineLines([]);
     setSelectedEngineState("idle");
@@ -1638,6 +1669,10 @@ export default function Home() {
     selectedRequestRef.current++;
     workerRef.current?.postMessage({ type: "stop" });
     setPieces(initialPieces);
+    setStartingPieces(initialPieces);
+    setStartingTurn("red");
+    setRecordTitle("新对局");
+    setRecordMessage("");
     setHistory([]);
     setPositionScores({});
     setActivePly(0);
@@ -1650,6 +1685,100 @@ export default function Home() {
     setPreviewedCandidateMove(null);
     setTimelinePreviewPly(null);
     aiPositionRef.current = "";
+  }
+
+  function refreshSavedGames() {
+    try {
+      const index = JSON.parse(localStorage.getItem("yisi-xiangqi-saves") || "[]");
+      setSavedGames(Array.isArray(index) ? index : []);
+    } catch {
+      setSavedGames([]);
+    }
+  }
+
+  function installRecord(
+    imported: { title: string; pieces: Piece[]; turn: Side; moves: Array<{ from: [number, number]; to: [number, number] }> },
+    scores: Record<number, number> = {},
+    requestedPly?: number,
+  ) {
+    let position = imported.pieces.map((piece) => ({ ...piece }));
+    const importedHistory: Move[] = [];
+    for (const coordinates of imported.moves) {
+      const moving = position.find((piece) => piece.x === coordinates.from[0] && piece.y === coordinates.from[1]);
+      if (!moving) throw new Error(`第 ${importedHistory.length + 1} 步的起点没有棋子。`);
+      const captured = position.find((piece) => piece.x === coordinates.to[0] && piece.y === coordinates.to[1]);
+      importedHistory.push({ piece: { ...moving }, from: coordinates.from, to: coordinates.to, captured: captured ? { ...captured } : undefined });
+      position = position
+        .filter((piece) => piece.id !== captured?.id)
+        .map((piece) => piece.id === moving.id ? { ...piece, x: coordinates.to[0], y: coordinates.to[1] } : piece);
+    }
+    const targetPly = Math.max(0, Math.min(requestedPly ?? importedHistory.length, importedHistory.length));
+    requestRef.current++;
+    selectedRequestRef.current++;
+    workerRef.current?.postMessage({ type: "stop" });
+    setStartingPieces(imported.pieces.map((piece) => ({ ...piece })));
+    setStartingTurn(imported.turn);
+    setHistory(importedHistory);
+    setPositionScores(scores);
+    setActivePly(targetPly);
+    setPieces(positionAtPly(importedHistory, targetPly, imported.pieces));
+    setTurn(sideAfterPly(imported.turn, targetPly));
+    setRecordTitle(imported.title || "导入棋局");
+    setGameMode("local");
+    setSelected(null);
+    setEngineLines([]);
+    setSelectedEngineLines([]);
+    setVariationPreview(null);
+    setTimelinePreviewPly(null);
+    setEngineState("thinking");
+    setShowRecordPanel(false);
+    setRecordMessage(`已载入“${imported.title || "导入棋局"}”，共 ${importedHistory.length} 步；可前后浏览或从当前局面续走。`);
+  }
+
+  async function importRecordFile(file: File) {
+    try {
+      if (/\.xqf$/i.test(file.name)) installRecord(parseXqf(await file.arrayBuffer(), file.name) as Parameters<typeof installRecord>[0]);
+      else if (/\.json$/i.test(file.name)) {
+        const saved = JSON.parse(await file.text());
+        if (saved?.version !== SAVED_GAME_VERSION) throw new Error("不支持此弈思存档版本。 ");
+        installRecord(saved.record, saved.positionScores || {}, saved.activePly);
+      } else installRecord(parseFen(await file.text()) as Parameters<typeof installRecord>[0]);
+    } catch (error) {
+      setRecordMessage(error instanceof Error ? error.message : "棋谱载入失败。 ");
+    } finally {
+      if (recordFileRef.current) recordFileRef.current.value = "";
+    }
+  }
+
+  function importFenText() {
+    try { installRecord(parseFen(fenInput) as Parameters<typeof installRecord>[0]); }
+    catch (error) { setRecordMessage(error instanceof Error ? error.message : "FEN 载入失败。 "); }
+  }
+
+  function saveGame() {
+    const id = `game-${Date.now()}`;
+    const savedAt = new Date().toISOString();
+    const title = recordTitle === "新对局" ? `象棋对局 ${new Date().toLocaleString("zh-CN")}` : recordTitle;
+    const record = {
+      title,
+      pieces: startingPieces,
+      turn: startingTurn,
+      moves: history.map((move) => ({ from: move.from, to: move.to })),
+    };
+    localStorage.setItem(`yisi-xiangqi-save:${id}`, JSON.stringify({ version: SAVED_GAME_VERSION, record, activePly, positionScores }));
+    const next = [{ id, title, savedAt }, ...savedGames].slice(0, 20);
+    localStorage.setItem("yisi-xiangqi-saves", JSON.stringify(next));
+    setSavedGames(next);
+    setRecordTitle(title);
+    setRecordMessage(`已保存“${title}”，下次打开本浏览器仍可载入。`);
+  }
+
+  function loadSavedGame(id: string) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`yisi-xiangqi-save:${id}`) || "null");
+      if (!saved) throw new Error("找不到这份本地存档。 ");
+      installRecord(saved.record, saved.positionScores || {}, saved.activePly);
+    } catch (error) { setRecordMessage(error instanceof Error ? error.message : "存档载入失败。 "); }
   }
 
   function changeDepth(depth: number) {
@@ -1732,6 +1861,9 @@ export default function Home() {
       setSetupMessage("红帅和黑将必须各保留一枚。");
       return;
     }
+    setStartingPieces(pieces.map((piece) => ({ ...piece })));
+    setStartingTurn(turn);
+    setRecordTitle("自定义局面");
     changeGameMode("local");
   }
 
@@ -1761,6 +1893,61 @@ export default function Home() {
         </div>
       </header>
 
+      <Collapsible title="棋谱与存档"><section className="record-toolbar panel" aria-label="棋谱与存档">
+        <div className="record-summary">
+          <span aria-hidden="true">谱</span>
+          <div>
+            <small>当前棋局</small>
+            <strong>{recordTitle}</strong>
+          </div>
+          <em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em>
+        </div>
+        <div className="record-stepper" aria-label="棋谱步进">
+          <button onClick={() => goToPly(0)} disabled={activePly === 0} title="回到开始"><i>⇤</i><span>开始</span></button>
+          <button onClick={() => goToPly(activePly - 1)} disabled={activePly === 0} title="上一步"><i>‹</i><span>上一步</span></button>
+          <button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length} title="下一步"><span>下一步</span><i>›</i></button>
+          <button onClick={() => goToPly(history.length)} disabled={activePly === history.length} title="前往末尾"><span>末尾</span><i>⇥</i></button>
+        </div>
+        <div className="record-actions">
+          <button className="load-record" onClick={() => { refreshSavedGames(); setShowRecordPanel((value) => !value); }}><i>↥</i> 载入棋谱</button>
+          <button className="save-record" onClick={saveGame}><i>⌑</i> 保存棋局</button>
+        </div>
+        <input
+          ref={recordFileRef}
+          type="file"
+          hidden
+          accept=".xqf,.fen,.json,text/plain,application/json"
+          onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecordFile(file); }}
+        />
+      </section></Collapsible>
+      {showRecordPanel && (
+        <section className="record-loader panel">
+          <div className="loader-heading">
+            <div><strong>载入棋谱或局面</strong><small>文件只在本机浏览器中读取，不会上传</small></div>
+            <button onClick={() => setShowRecordPanel(false)} aria-label="关闭载入面板">×</button>
+          </div>
+          <div className="loader-grid">
+            <button className="file-load" onClick={() => recordFileRef.current?.click()}>
+              <b>选择本地文件</b><span>XQF 1.0 · FEN · 弈思 JSON 存档</span>
+            </button>
+            <div className="fen-load">
+              <label htmlFor="fen-input">粘贴 FEN 局面</label>
+              <textarea id="fen-input" value={fenInput} onChange={(event) => setFenInput(event.target.value)} placeholder="例如：rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w" />
+              <button onClick={importFenText} disabled={!fenInput.trim()}>载入此局面</button>
+            </div>
+          </div>
+          <div className="saved-games">
+            <strong>本机存档</strong>
+            {savedGames.length ? savedGames.map((saved) => (
+              <button key={saved.id} onClick={() => loadSavedGame(saved.id)}>
+                <span>{saved.title}</span><small>{new Date(saved.savedAt).toLocaleString("zh-CN")}</small>
+              </button>
+            )) : <em>还没有保存的棋局</em>}
+          </div>
+        </section>
+      )}
+      {recordMessage && <div className="record-message" role="status"><span>{recordMessage}</span><button onClick={() => setRecordMessage("")}>×</button></div>}
+
       <section className="workspace">
         <div className="board-wrap" ref={boardSectionRef}>
           <div className="board-top">
@@ -1770,6 +1957,14 @@ export default function Home() {
               </b>
               <span>走棋</span>
             </div>
+            <button
+              className="perspective-button"
+              onClick={() => setBoardFlipped((value) => !value)}
+              aria-pressed={boardFlipped}
+              aria-label={boardFlipped ? "切换为红方视角" : "切换为黑方视角"}
+            >
+              ⇅ 视角
+            </button>
             <button
               className={`best-toggle ${showBestArrows ? "active" : ""}`}
               onClick={() => setShowBestArrows((value) => !value)}
@@ -1783,19 +1978,13 @@ export default function Home() {
             </button>
             <div className="tools">
               <button
-                onClick={() => setBoardFlipped((value) => !value)}
-                aria-pressed={boardFlipped}
-                aria-label={boardFlipped ? "切换为红方视角" : "切换为黑方视角"}
-              >
-                ⇅ 视角
-              </button>
-              <button
                 className="undo-button"
                 onClick={undo}
                 disabled={activePly === 0}
               >
                 ↶ 悔棋
               </button>
+              <button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length}>↷ 前进</button>
               <button onClick={reset}>↻ 重开</button>
             </div>
           </div>
@@ -2028,12 +2217,12 @@ export default function Home() {
                         ? `已选中${selectedPiece.name}：蓝色为合法落点，正在计算绿色首选`
                         : `已选中${selectedPiece.name}：绿色为本子首选，蓝色为其他合法落点`
                       : activePly < history.length
-                        ? `正在查看第 ${activePly} 步后的历史局面；现在落子会替换后续 ${history.length - activePly} 步`
+                        ? `正在查看第 ${activePly} 步后的历史局面；现在落子将从此处分支，并替换主线后续 ${history.length - activePly} 步`
                         : engineState === "thinking"
                           ? `皮卡鱼思考中，仍可继续行棋；落子后自动改算${turn === "red" ? "黑" : "红"}方应着`
                           : `${turn === "red" ? "红" : "黑"}方走棋 · 点击棋子开始`}
           </div>
-          <section className="game-mode-card panel" aria-label="对局模式">
+          <Collapsible title="对弈模式"><section className="game-mode-card panel" aria-label="对局模式">
             <div className="mode-card-heading">
               <span>局</span>
               <div>
@@ -2067,10 +2256,10 @@ export default function Home() {
                 我执{humanSide === "red" ? "红" : "黑"}
               </button>
             )}
-          </section>
+          </section></Collapsible>
         </div>
 
-        <aside className="right-panel panel">
+        <Collapsible title="教练分析" open><aside className="right-panel panel">
           <div className="panel-title">
             <span>01</span>
             <div>
@@ -2207,10 +2396,10 @@ export default function Home() {
             <strong>{analysis.principle}</strong>
             <p>请结合对手下一步最强回应，再决定后续计划。</p>
           </div>
-        </aside>
+        </aside></Collapsible>
       </section>
 
-      <SituationChart
+      <Collapsible title="局势图"><SituationChart
         points={evaluationPoints}
         history={history}
         analyzing={engineState === "loading" || engineState === "thinking"}
@@ -2218,9 +2407,10 @@ export default function Home() {
         flipped={boardFlipped}
         onPreviewPly={previewTimeline}
         onSelectPly={goToPly}
-      />
+        startingPieces={startingPieces}
+      /></Collapsible>
 
-      <section className="depth-card panel">
+      <Collapsible title="分析深度"><section className="depth-card panel">
         <div>
           <strong>分析深度</strong>
           <small>按设备性能选择；修改后从当前局面重新计算</small>
@@ -2237,7 +2427,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-      </section>
+      </section></Collapsible>
 
       <footer>
         <div>

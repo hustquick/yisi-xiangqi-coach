@@ -45,6 +45,15 @@ final class PikafishService: @unchecked Sendable {
         pf_stop()
     }
 
+    /// Fire-and-forget interruption for a touch-driven board action. The C++
+    /// stop flag is thread-safe; dispatching it keeps native engine work out of
+    /// the main actor's tap transaction.
+    func interruptForBoardAction() {
+        DispatchQueue.global(qos: .userInteractive).async {
+            pf_stop()
+        }
+    }
+
     func analyze(fen: String, depth: Int, multiPV: Int, searchMoves: [String] = []) async throws -> [EngineLine] {
         try await onEngineQueue {
             try self.ensureInitialized()

@@ -1,8 +1,16 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var viewModel = CoachViewModel()
     @State private var boardFocusRequest = 0
+    @State private var showsRecordSheet = false
+    @State private var importsFile = false
+    @State private var fenText = ""
+    @State private var analysisExpanded = true
+    @State private var situationExpanded = false
+    @State private var recordsExpanded = false
+    @State private var depthExpanded = false
 
     private let paper = Color(red: 0.97, green: 0.96, blue: 0.92)
     private let ink = Color(red: 0.10, green: 0.12, blue: 0.10)
@@ -12,26 +20,16 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 18) {
-                        header
-                        if geometry.size.width >= 900 {
-                            HStack(alignment: .top, spacing: 18) {
-                                boardSection.frame(maxWidth: 720)
-                                analysisPanel.frame(width: min(430, geometry.size.width * 0.36))
-                            }
+                Group {
+                    if geometry.size.width >= 820 {
+                        if geometry.size.height > geometry.size.width {
+                            iPadPortraitLayout(size: geometry.size)
                         } else {
-                            boardSection
-                            analysisPanel
+                            iPadLandscapeLayout(size: geometry.size)
                         }
-                        situationPanel
-                        depthSelector
-                        footer
+                    } else {
+                        phoneLayout
                     }
-                    .padding(.horizontal, geometry.size.width >= 700 ? 24 : 14)
-                    .padding(.vertical, 14)
-                    .frame(maxWidth: 1380)
-                    .frame(maxWidth: .infinity)
                 }
                 .onChange(of: boardFocusRequest) { _, _ in
                     withAnimation(.easeInOut(duration: 0.38)) {
@@ -42,6 +40,140 @@ struct ContentView: View {
             .background(paper.ignoresSafeArea())
         }
         .task { viewModel.start() }
+        .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data, .plainText, .json]) { result in
+            if case .success(let url) = result {
+                let accessed = url.startAccessingSecurityScopedResource()
+                viewModel.importFile(url: url)
+                if accessed { url.stopAccessingSecurityScopedResource() }
+            }
+        }
+        .sheet(isPresented: $showsRecordSheet) { recordSheet }
+        .alert("棋谱", isPresented: Binding(get: { viewModel.recordMessage != nil }, set: { if !$0 { viewModel.dismissRecordMessage() } })) {
+            Button("好") { viewModel.dismissRecordMessage() }
+        } message: { Text(viewModel.recordMessage ?? "") }
+    }
+
+    private var phoneLayout: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                header
+                boardSection
+                collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
+                collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
+                collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
+                footer
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+        }
+    }
+
+    private func iPadPortraitLayout(size: CGSize) -> some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                header
+                boardSection
+                    .frame(maxWidth: min(760, size.width - 48, (size.height - 120) * 0.77))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 14) {
+                    collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
+                    collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                    collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
+                    collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
+                }
+                footer
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func iPadLandscapeLayout(size: CGSize) -> some View {
+        VStack(spacing: 12) {
+            header.padding(.horizontal, 24)
+            HStack(alignment: .top, spacing: 22) {
+                VStack(spacing: 0) {
+                    boardSection
+                        .frame(maxWidth: min(650, size.width * 0.59, max(360, (size.height - 150) * 0.77)))
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
+                        collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                        collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
+                        collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
+                        footer
+                    }
+                    .padding(.trailing, 6)
+                    .padding(.bottom, 24)
+                }
+                .frame(width: min(440, size.width * 0.38))
+            }
+            .padding(.horizontal, 24)
+        }
+        .padding(.top, 10)
+    }
+
+    private func collapsible<Content: View>(_ title: String, isExpanded: Binding<Bool>, @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: isExpanded.wrappedValue ? 10 : 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.wrappedValue.toggle() }
+            } label: {
+                HStack {
+                    Text(title).font(.subheadline.bold())
+                    Spacer()
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                        .foregroundStyle(green)
+                }
+                .padding(.horizontal, 14).frame(height: 44)
+                .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            if isExpanded.wrappedValue { content() }
+        }
+    }
+
+    private var recordToolbar: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.recordTitle).font(.subheadline.bold())
+                Text("\(viewModel.activePly) / \(viewModel.history.count) 步").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("|‹") { viewModel.goToPly(0) }.disabled(viewModel.activePly == 0)
+            Button("‹") { viewModel.goToPly(viewModel.activePly - 1) }.disabled(viewModel.activePly == 0)
+            Button("›") { viewModel.goToPly(viewModel.activePly + 1) }.disabled(viewModel.activePly == viewModel.history.count)
+            Button("›|") { viewModel.goToPly(viewModel.history.count) }.disabled(viewModel.activePly == viewModel.history.count)
+            Button("载入") { showsRecordSheet = true }
+            Button("保存") { viewModel.saveGame() }.buttonStyle(.borderedProminent).tint(green)
+        }
+        .buttonStyle(.bordered)
+        .padding(12).background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var recordSheet: some View {
+        NavigationStack {
+            Form {
+                Section("本地文件") { Button("选择 XQF、FEN 或弈思 JSON 文件") { importsFile = true } }
+                Section("粘贴 FEN 局面") {
+                    TextEditor(text: $fenText).frame(minHeight: 90).font(.system(.caption, design: .monospaced))
+                    Button("载入此局面") { viewModel.importFEN(fenText); showsRecordSheet = false }.disabled(fenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Section("本机存档") {
+                    if viewModel.savedGames.isEmpty { Text("还没有保存的棋局").foregroundStyle(.secondary) }
+                    ForEach(viewModel.savedGames) { game in
+                        Button { viewModel.loadSavedGame(game); showsRecordSheet = false } label: {
+                            VStack(alignment: .leading) { Text(game.title); Text(game.savedAt.formatted()).font(.caption2).foregroundStyle(.secondary) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("载入棋谱或局面")
+            .toolbar { Button("完成") { showsRecordSheet = false } }
+        }
     }
 
     private var header: some View {
@@ -111,8 +243,7 @@ struct ContentView: View {
     private var boardSection: some View {
         VStack(spacing: 8) {
             gameModeControls
-            ZStack {
-                HStack {
+            HStack {
                     Label("\(viewModel.sideToMove.title)走棋", systemImage: "circle.fill")
                         .font(.headline)
                         .foregroundStyle(viewModel.sideToMove == .red ? red : ink)
@@ -121,11 +252,10 @@ struct ContentView: View {
                         Image(systemName: "arrow.up.arrow.down")
                     }
                     .accessibilityLabel(viewModel.boardFlipped ? "切换为红方视角" : "切换为黑方视角")
+                    candidateArrowToggle
                     Button("悔棋", systemImage: "arrow.uturn.backward") { viewModel.undo() }
                         .disabled(viewModel.activePly == 0)
                     Button("重开", systemImage: "arrow.clockwise") { viewModel.reset() }
-                }
-                candidateArrowToggle
             }
             .buttonStyle(.borderless)
             XiangqiBoardView(viewModel: viewModel)

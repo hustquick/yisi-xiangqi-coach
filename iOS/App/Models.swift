@@ -94,6 +94,86 @@ struct ParsedPosition: Sendable {
     }
 }
 
+/// Fast, deterministic Xiangqi rules used by the UI. Engine analysis is never
+/// consulted to select a piece, show destinations, or apply a human move.
+enum XiangqiRules {
+    static func legalMoves(for side: XiangqiSide, pieces: [BoardPiece]) -> [String] {
+        pieces.filter { $0.side == side }.flatMap { legalMoves(for: $0, pieces: pieces) }
+    }
+
+    static func legalMoves(for piece: BoardPiece, pieces: [BoardPiece]) -> [String] {
+        var result: [String] = []
+        for rank in 0..<10 {
+            for file in 0..<9 where isLegal(piece, toFile: file, toRank: rank, pieces: pieces) {
+                result.append(piece.uciSquare + square(file: file, rank: rank))
+            }
+        }
+        return result
+    }
+
+    static func isLegal(_ piece: BoardPiece, toFile: Int, toRank: Int, pieces: [BoardPiece]) -> Bool {
+        guard isPseudoLegal(piece, toFile: toFile, toRank: toRank, pieces: pieces) else { return false }
+        var next = pieces.filter {
+            !($0.file == toFile && $0.rank == toRank) && $0 != piece
+        }
+        next.append(BoardPiece(side: piece.side, kind: piece.kind, file: toFile, rank: toRank))
+        return !isInCheck(piece.side, pieces: next)
+    }
+
+    private static func isPseudoLegal(_ piece: BoardPiece, toFile file: Int, toRank rank: Int, pieces: [BoardPiece]) -> Bool {
+        guard (0...8).contains(file), (0...9).contains(rank),
+              file != piece.file || rank != piece.rank else { return false }
+        let target = pieces.first { $0.file == file && $0.rank == rank }
+        if target?.side == piece.side { return false }
+        let dx = abs(file - piece.file), dy = abs(rank - piece.rank)
+        let between = pieces.filter { candidate in
+            candidate != piece &&
+            ((candidate.file == piece.file && file == piece.file &&
+              candidate.rank > min(rank, piece.rank) && candidate.rank < max(rank, piece.rank)) ||
+             (candidate.rank == piece.rank && rank == piece.rank &&
+              candidate.file > min(file, piece.file) && candidate.file < max(file, piece.file)))
+        }
+        switch piece.kind {
+        case .rook:
+            return (dx == 0 || dy == 0) && between.isEmpty
+        case .cannon:
+            return (dx == 0 || dy == 0) && between.count == (target == nil ? 0 : 1)
+        case .horse:
+            guard dx * dy == 2 else { return false }
+            let legFile = dx == 2 ? piece.file + (file - piece.file) / 2 : piece.file
+            let legRank = dy == 2 ? piece.rank + (rank - piece.rank) / 2 : piece.rank
+            return !pieces.contains { $0.file == legFile && $0.rank == legRank }
+        case .elephant:
+            return dx == 2 && dy == 2 &&
+                (piece.side == .red ? rank >= 5 : rank <= 4) &&
+                !pieces.contains { $0.file == (file + piece.file) / 2 && $0.rank == (rank + piece.rank) / 2 }
+        case .advisor:
+            return dx == 1 && dy == 1 && (3...5).contains(file) &&
+                (piece.side == .red ? rank >= 7 : rank <= 2)
+        case .king:
+            let flyingCapture = file == piece.file && target?.kind == .king && between.isEmpty
+            return flyingCapture || (dx + dy == 1 && (3...5).contains(file) &&
+                (piece.side == .red ? rank >= 7 : rank <= 2))
+        case .pawn:
+            let step = piece.side == .red ? -1 : 1
+            let crossed = piece.side == .red ? piece.rank <= 4 : piece.rank >= 5
+            return (file == piece.file && rank - piece.rank == step) ||
+                (crossed && rank == piece.rank && dx == 1)
+        }
+    }
+
+    private static func isInCheck(_ side: XiangqiSide, pieces: [BoardPiece]) -> Bool {
+        guard let king = pieces.first(where: { $0.side == side && $0.kind == .king }) else { return true }
+        return pieces.contains {
+            $0.side != side && isPseudoLegal($0, toFile: king.file, toRank: king.rank, pieces: pieces)
+        }
+    }
+
+    private static func square(file: Int, rank: Int) -> String {
+        "\(Character(UnicodeScalar(97 + file)!))\(9 - rank)"
+    }
+}
+
 struct EngineLine: Decodable, Identifiable, Sendable {
     let depth: Int
     let selDepth: Int

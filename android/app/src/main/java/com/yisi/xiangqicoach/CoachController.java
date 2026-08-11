@@ -1,6 +1,7 @@
 package com.yisi.xiangqicoach;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -30,6 +31,7 @@ final class CoachController {
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService engineQueue = Executors.newSingleThreadExecutor();
+    private final ExecutorService interruptQueue = Executors.newSingleThreadExecutor();
     private Listener listener;
     private boolean initialized;
     private volatile int positionGeneration;
@@ -58,6 +60,8 @@ final class CoachController {
     Side setupSide = Side.RED;
     PieceKind setupKind = PieceKind.ROOK;
     String setupMessage;
+    String recordTitle = "新对局";
+    String recordMessage;
     private final Runnable computerMove = () -> {
         if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide && !analyzing && !globalLines.isEmpty()) play(globalLines.get(0).firstMove());
     };
@@ -87,10 +91,8 @@ final class CoachController {
     }
 
     List<String> selectedLegalMoves() {
-        if (selectedSquare == null) return Collections.emptyList();
-        List<String> result = new ArrayList<>();
-        for (String move : legalMoves) if (move.startsWith(selectedSquare)) result.add(move);
-        return result;
+        BoardPiece selected = selectedPiece();
+        return selected == null ? Collections.emptyList() : XiangqiRules.legalMoves(selected, pieces());
     }
 
     String selectedBestMove() { return selectedLines.isEmpty() ? null : selectedLines.get(0).firstMove(); }
@@ -210,24 +212,19 @@ final class CoachController {
     }
 
     void play(String move) {
-        if (gameMode == GameMode.SETUP || !legalMoves.contains(move)) return;
+        if (gameMode == GameMode.SETUP) return;
         MoveCoordinates points = ChineseNotation.coordinates(move);
         if (points == null) return;
+        List<BoardPiece> oldPieces = pieces();
+        BoardPiece movingPiece = null;
+        for (BoardPiece piece : oldPieces) if (piece.file == points.fromFile && piece.rank == points.fromRank && piece.side == sideToMove()) { movingPiece = piece; break; }
+        if (movingPiece == null || !XiangqiRules.isLegal(movingPiece, points.toFile, points.toRank, oldPieces)) return;
         cancelComputerMove();
         previewedCandidateMove = null;
-        PikafishNative.stop();
+        interruptAnalysis();
         backfillGeneration++;
         final String oldFen = fen;
         final int basePly = activePly;
-        List<BoardPiece> oldPieces = pieces();
-        BoardPiece movingPiece = null;
-        for (BoardPiece piece : oldPieces) {
-            if (piece.file == points.fromFile && piece.rank == points.fromRank) {
-                movingPiece = piece;
-                break;
-            }
-        }
-        if (movingPiece == null) return;
         Integer before = globalLines.isEmpty() ? null : globalLines.get(0).centipawns();
         String bestMove = globalBestMove();
         MoveRecord record = new MoveRecord(oldFen, move, ChineseNotation.name(move, oldPieces), sideToMove(), before,
@@ -255,6 +252,7 @@ final class CoachController {
         timelineEndFen = newFen;
         legalMoves = new ArrayList<>();
         clearSelection();
+        notifyChanged();
         refreshAnalysis();
     }
 
@@ -292,11 +290,57 @@ final class CoachController {
         fen = INITIAL_FEN;
         activePly = 0;
         timelineEndFen = INITIAL_FEN;
+        recordTitle = "新对局";
         legalMoves = new ArrayList<>();
         clearSelection();
         if (gameMode == GameMode.SETUP) { globalLines = new ArrayList<>(); analyzing = false; notifyChanged(); }
         else refreshAnalysis();
     }
+
+    void loadRecord(GameRecordIO.Record imported) {
+        cancelComputerMove(); PikafishNative.stop(); backfillGeneration++; positionGeneration++; selectionGeneration++;
+        String current = imported.startFen; List<MoveRecord> records = new ArrayList<>();
+        for (String move : imported.moves) {
+            ParsedPosition position = ParsedPosition.parse(current); MoveCoordinates points = ChineseNotation.coordinates(move);
+            BoardPiece moving = null;
+            if (points != null) for (BoardPiece piece : position.pieces) if (piece.file == points.fromFile && piece.rank == points.fromRank) { moving = piece; break; }
+            if (moving == null) { recordMessage = "第 " + (records.size() + 1) + " 步的起点没有棋子。"; notifyChanged(); return; }
+            records.add(new MoveRecord(current, move, ChineseNotation.name(move, position.pieces), moving.side, null, false, null));
+            List<BoardPiece> updated = new ArrayList<>();
+            for (BoardPiece piece : position.pieces) if (!((piece.file == points.fromFile && piece.rank == points.fromRank) || (piece.file == points.toFile && piece.rank == points.toRank))) updated.add(piece);
+            updated.add(new BoardPiece(moving.side, moving.kind, points.toFile, points.toRank));
+            current = makeFen(updated, position.sideToMove == Side.RED ? Side.BLACK : Side.RED);
+        }
+        history.clear(); history.addAll(records); positionScores.clear(); timelineEndFen = current;
+        activePly = Math.max(0, Math.min(imported.activePly, records.size()));
+        fen = activePly < records.size() ? records.get(activePly).beforeFen : current;
+        recordTitle = imported.title; recordMessage = "已载入“" + imported.title + "”，共 " + records.size() + " 步；可从任意局面续走。";
+        gameMode = GameMode.LOCAL; legalMoves = new ArrayList<>(); globalLines = new ArrayList<>(); clearSelection(); refreshAnalysis();
+    }
+
+    GameRecordIO.Record currentRecord() {
+        List<String> moves = new ArrayList<>(); for (MoveRecord move : history) moves.add(move.uci);
+        String start = history.isEmpty() ? fen : history.get(0).beforeFen;
+        return new GameRecordIO.Record(recordTitle.equals("新对局") ? "象棋对局" : recordTitle, start, moves, activePly);
+    }
+
+    void saveGame() {
+        try {
+            SharedPreferences preferences = context.getSharedPreferences("games", Context.MODE_PRIVATE);
+            JSONArray games = new JSONArray(preferences.getString("saved", "[]"));
+            JSONObject json = GameRecordIO.toJson(currentRecord()); json.put("id", System.currentTimeMillis()); games.put(json);
+            preferences.edit().putString("saved", games.toString()).apply(); recordTitle = json.getString("title"); recordMessage = "已保存“" + recordTitle + "”。";
+        } catch (Exception exception) { recordMessage = exception.getMessage(); }
+        notifyChanged();
+    }
+
+    List<JSONObject> savedGames() {
+        List<JSONObject> result = new ArrayList<>();
+        try { JSONArray array = new JSONArray(context.getSharedPreferences("games", Context.MODE_PRIVATE).getString("saved", "[]")); for (int i = array.length() - 1; i >= 0; i--) result.add(array.getJSONObject(i)); }
+        catch (Exception ignored) {} return result;
+    }
+
+    void clearRecordMessage() { recordMessage = null; notifyChanged(); }
 
     String notation(EngineLine line) { return ChineseNotation.name(line.firstMove(), pieces()); }
 
@@ -425,6 +469,7 @@ final class CoachController {
         PikafishNative.stop();
         backfillGeneration++;
         engineQueue.shutdownNow();
+        interruptQueue.shutdownNow();
     }
 
     private void select(BoardPiece piece) {
@@ -432,7 +477,7 @@ final class CoachController {
         selectedSquare = piece.square();
         selectedLines = new ArrayList<>();
         analyzingSelection = true;
-        List<String> moves = selectedLegalMoves();
+        List<String> moves = XiangqiRules.legalMoves(piece, pieces());
         String fenAtStart = fen;
         int depthAtStart = analysisDepth;
         int generation = ++selectionGeneration;
@@ -443,9 +488,11 @@ final class CoachController {
             notifyChanged();
             return;
         }
-        PikafishNative.stop();
-        backfillGeneration++;
-        engineQueue.execute(() -> {
+        main.postDelayed(() -> {
+            if (selectionGeneration != generation || !fen.equals(fenAtStart)) return;
+            interruptAnalysis();
+            backfillGeneration++;
+            engineQueue.execute(() -> {
             try {
                 if (selectionGeneration != generation) return;
                 ensureInitialized();
@@ -465,7 +512,8 @@ final class CoachController {
                     notifyChanged();
                 });
             }
-        });
+            });
+        }, 800);
     }
 
     private void clearSelection() {
@@ -491,17 +539,10 @@ final class CoachController {
                 if (positionGeneration != generation) return;
                 ensureInitialized();
                 if (positionGeneration != generation) return;
-                List<String> moves = parseMoves(PikafishNative.legalMoves(fenAtStart));
-                main.post(() -> {
-                    if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
-                    legalMoves = moves;
-                    notifyChanged();
-                });
                 if (positionGeneration != generation) return;
                 List<EngineLine> lines = analyze(fenAtStart, depthAtStart, 5, Collections.emptyList());
                 main.post(() -> {
                     if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
-                    legalMoves = moves;
                     globalLines = lines;
                     Integer score = lines.isEmpty() ? null : lines.get(0).centipawns();
                     if (score != null) positionScores.put(activePly, sideToMove() == Side.RED ? score : -score);
@@ -587,6 +628,8 @@ final class CoachController {
     }
 
     private void cancelComputerMove() { main.removeCallbacks(computerMove); }
+
+    private void interruptAnalysis() { interruptQueue.execute(PikafishNative::stop); }
 
     private String makeFen(List<BoardPiece> pieces, Side side) {
         StringBuilder board = new StringBuilder();

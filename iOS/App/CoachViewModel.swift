@@ -30,6 +30,9 @@ final class CoachViewModel: ObservableObject {
     @Published private(set) var humanSide: XiangqiSide = .red
     @Published private(set) var setupTool: SetupTool = .move
     @Published private(set) var setupMessage: String?
+    @Published private(set) var recordTitle = "新对局"
+    @Published private(set) var recordMessage: String?
+    @Published private(set) var savedGames: [PortableGame] = GameRecordIO.savedGames()
 
     private let engine = PikafishService.shared
     private var positionGeneration = UUID()
@@ -47,8 +50,8 @@ final class CoachViewModel: ObservableObject {
     var sideToMove: XiangqiSide { position.sideToMove }
     var selectedPiece: BoardPiece? { pieces.first { $0.uciSquare == selectedSquare } }
     var selectedLegalMoves: [String] {
-        guard let selectedSquare else { return [] }
-        return legalMoves.filter { $0.hasPrefix(selectedSquare) }
+        guard let selectedPiece else { return [] }
+        return XiangqiRules.legalMoves(for: selectedPiece, pieces: pieces)
     }
     var completedRounds: Int { activePly / 2 }
     var currentScore: String { globalLines.first.map { scoreText(for: $0) } ?? "—" }
@@ -213,7 +216,6 @@ final class CoachViewModel: ObservableObject {
 
     func setAnalysisDepth(_ newDepth: Int) {
         guard Self.availableDepths.contains(newDepth), newDepth != analysisDepth else { return }
-        engine.stop()
         scoreBackfillTask?.cancel()
         analysisDepth = newDepth
         previewedCandidateMove = nil
@@ -398,7 +400,13 @@ final class CoachViewModel: ObservableObject {
     }
 
     func play(_ move: String) {
-        guard gameMode != .setup, !isApplyingMove, legalMoves.contains(move) else { return }
+        guard gameMode != .setup, !isApplyingMove,
+              let requested = ChineseNotation.coordinates(move),
+              let rulePiece = pieces.first(where: {
+                  $0.file == requested.fromFile && $0.rank == requested.fromRank && $0.side == sideToMove
+              }),
+              XiangqiRules.isLegal(rulePiece, toFile: requested.toFile, toRank: requested.toRank, pieces: pieces)
+        else { return }
         guard let points = ChineseNotation.coordinates(move),
               let movingPiece = pieces.first(where: {
                   $0.file == points.fromFile && $0.rank == points.fromRank
@@ -423,7 +431,7 @@ final class CoachViewModel: ObservableObject {
         selectionGeneration = UUID()
         positionAnalysisTask?.cancel()
         selectionAnalysisTask?.cancel()
-        engine.stop()
+        engine.interruptForBoardAction()
         scoreBackfillTask?.cancel()
         isAnalyzing = false
         isAnalyzingSelection = false
@@ -453,6 +461,9 @@ final class CoachViewModel: ObservableObject {
         timelineEndFEN = newFEN
         isApplyingMove = false
         legalMoves = []
+
+        // Rules already made the move available synchronously. Start only the
+        // new position's analysis; it no longer gates the next board action.
         refreshAnalysis()
     }
 
@@ -496,6 +507,8 @@ final class CoachViewModel: ObservableObject {
         fen = Self.initialFEN
         activePly = 0
         timelineEndFEN = Self.initialFEN
+        recordTitle = "新对局"
+        recordMessage = nil
         clearSelection()
         if gameMode == .setup {
             legalMoves = []
@@ -505,6 +518,66 @@ final class CoachViewModel: ObservableObject {
             refreshAnalysis()
         }
     }
+
+    func loadRecord(startFEN: String, moves: [String], title: String, requestedPly: Int? = nil) {
+        cancelComputerMove(); stopAllPreviews(); engine.stop()
+        var current = startFEN
+        var records: [MoveRecord] = []
+        for move in moves {
+            let position = ParsedPosition.parse(fen: current)
+            guard let points = ChineseNotation.coordinates(move),
+                  let moving = position.pieces.first(where: { $0.file == points.fromFile && $0.rank == points.fromRank }) else {
+                recordMessage = "第 \(records.count + 1) 步的起点没有棋子。"; return
+            }
+            records.append(MoveRecord(beforeFEN: current, uci: move,
+                                      notation: ChineseNotation.name(for: move, pieces: position.pieces),
+                                      mover: moving.side, beforeScore: nil, wasEngineBest: false, bestBefore: nil))
+            var updated = position.pieces.filter {
+                !($0.file == points.fromFile && $0.rank == points.fromRank) &&
+                !($0.file == points.toFile && $0.rank == points.toRank)
+            }
+            updated.append(BoardPiece(side: moving.side, kind: moving.kind, file: points.toFile, rank: points.toRank))
+            current = Self.makeFEN(pieces: updated, side: position.sideToMove.opposite)
+        }
+        history = records; positionScores.removeAll(); timelineEndFEN = current
+        activePly = min(max(requestedPly ?? records.count, 0), records.count)
+        fen = activePly < records.count ? records[activePly].beforeFEN : current
+        recordTitle = title; recordMessage = "已载入“\(title)”，共 \(records.count) 步；可从任意局面续走。"
+        gameMode = .local; legalMoves = []; globalLines = []; clearSelection(); refreshAnalysis()
+    }
+
+    func importFEN(_ text: String) {
+        do { loadRecord(startFEN: try GameRecordIO.parseFEN(text), moves: [], title: "FEN 局面") }
+        catch { recordMessage = error.localizedDescription }
+    }
+
+    func importFile(url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+            if url.pathExtension.lowercased() == "xqf" {
+                let parsed = try GameRecordIO.parseXQF(data)
+                loadRecord(startFEN: parsed.fen, moves: parsed.moves, title: url.deletingPathExtension().lastPathComponent)
+            } else if url.pathExtension.lowercased() == "json" {
+                let game = try JSONDecoder().decode(PortableGame.self, from: data)
+                loadRecord(startFEN: game.startFEN, moves: game.moves, title: game.title, requestedPly: game.activePly)
+            } else { importFEN(String(decoding: data, as: UTF8.self)) }
+        } catch { recordMessage = error.localizedDescription }
+    }
+
+    func saveGame() {
+        let title = recordTitle == "新对局" ? "象棋对局 \(Date().formatted(date: .numeric, time: .shortened))" : recordTitle
+        let start = history.first?.beforeFEN ?? fen
+        let game = PortableGame(id: UUID().uuidString, title: title, savedAt: Date(), startFEN: start,
+                                moves: history.map(\.uci), activePly: activePly)
+        savedGames.insert(game, at: 0); savedGames = Array(savedGames.prefix(20)); GameRecordIO.store(savedGames)
+        recordTitle = title; recordMessage = "已保存“\(title)”。"
+    }
+
+    func loadSavedGame(_ game: PortableGame) {
+        loadRecord(startFEN: game.startFEN, moves: game.moves, title: game.title, requestedPly: game.activePly)
+    }
+
+    func dismissRecordMessage() { recordMessage = nil }
 
     func notation(for line: EngineLine) -> String {
         line.firstMove.map { ChineseNotation.name(for: $0, pieces: pieces) } ?? "—"
@@ -532,7 +605,7 @@ final class CoachViewModel: ObservableObject {
         selectedSquare = piece.uciSquare
         selectedLines = []
         isAnalyzingSelection = true
-        let moves = legalMoves.filter { $0.hasPrefix(piece.uciSquare) }
+        let moves = XiangqiRules.legalMoves(for: piece, pieces: pieces)
         let fenAtStart = fen
         let depthAtStart = analysisDepth
         let generation = UUID()
@@ -543,9 +616,25 @@ final class CoachViewModel: ObservableObject {
             isAnalyzingSelection = false
             return
         }
-        engine.stop()
-        scoreBackfillTask?.cancel()
         selectionAnalysisTask = Task {
+            // A normal move is two quick taps: select a piece, then select its
+            // destination.  Do not start (or even stop/reconfigure) Pikafish
+            // during that interaction window.  If the player completes the
+            // move, play(_:) cancels this task and updates the board entirely
+            // on the main actor before any new search is queued.
+            do {
+                try await Task.sleep(nanoseconds: 800_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  selectionGeneration == generation,
+                  fen == fenAtStart,
+                  selectedSquare == piece.uciSquare
+            else { return }
+
+            engine.stop()
+            scoreBackfillTask?.cancel()
             do {
                 let lines = try await engine.analyze(
                     fen: fenAtStart,
@@ -594,16 +683,9 @@ final class CoachViewModel: ObservableObject {
 
         positionAnalysisTask = Task {
             do {
-                let moves = try await engine.legalMoves(fen: fenAtStart)
-                guard positionGeneration == generation,
-                      fen == fenAtStart,
-                      analysisDepth == depthAtStart
-                else { return }
-                legalMoves = moves
-
-                // Publish legal moves first and leave a render window before
-                // starting the CPU-heavy search. A move during this window
-                // cancels this stale task before Pikafish starts thinking.
+                // Rules are already available synchronously. Leave the main
+                // actor entirely free for a render frame before asking the
+                // background engine queue to analyze this position.
                 try await Task.sleep(nanoseconds: 80_000_000)
                 guard !Task.isCancelled,
                       positionGeneration == generation,

@@ -25,3 +25,4 @@
 # Environment and debug files
 .env*
 *.log
+/windowsHTML.zip

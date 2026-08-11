@@ -1,0 +1,34 @@
+弈思象棋思考教练（Windows 离线 HTML 版）
+========================================
+
+运行方法
+--------
+1. 将整个 windowsHTML 文件夹完整解压到 Windows 电脑。
+2. 使用 Microsoft Edge 或 Google Chrome 双击打开 index.html。
+3. 等待页面右上角显示“浏览器皮卡鱼已就绪”后即可使用。
+
+重要说明
+--------
+- 不需要安装 Node.js、Python、服务器或其他软件。
+- 不需要联网；皮卡鱼 WebAssembly 引擎和 NNUE 神经网络已经打包在文件夹内。
+- 请勿单独复制 index.html。index.html、app.js、style.css、pikafish.js 和
+  engine-data.js 必须保持在同一文件夹内。
+- engine-data.js 体积较大，因为它同时包含离线引擎和神经网络，请勿删除或编辑。
+- 推荐使用 64 位 Windows 10/11 及最新版 Edge/Chrome。
+- 直接打开时浏览器地址会以 file:/// 开头，这是正常现象。
+
+主要功能
+--------
+- 双人对弈、人机对战和摆盘
+- 完整中国象棋合法走法校验
+- 皮卡鱼全局候选、选中棋子的候选与局面评分
+- 候选变化动画（最长推演 9 回合，提前胜负则停止）
+- 局势图、历史局面滑移回看、悔棋、重置和红黑视角倒置
+- 可选分析深度；引擎思考时仍可继续合法行棋
+- 行棋优先：棋盘立即落子，已排队的旧局面会被丢弃，只分析最新局面
+
+开源许可
+--------
+本软件内置 Pikafish，遵循 GNU GPL v3。许可见 PIKAFISH-LICENSE.txt，
+对应的、包含本离线版本修改的源码位于 source\pikafish。
+来源和构建说明见 PIKAFISH-SOURCE.txt。

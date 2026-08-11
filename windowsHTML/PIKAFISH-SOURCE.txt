@@ -1,0 +1,20 @@
+Pikafish WebAssembly 来源与构建说明
+===================================
+
+项目主页：https://github.com/official-pikafish/Pikafish
+上游版本：b2180562（2026-07-26）
+神经网络：https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
+许可证：GNU GPL v3（见 PIKAFISH-LICENSE.txt）
+
+本目录中的版本使用 Emscripten 6.0.6 编译为 wasm32 + WebAssembly SIMD。
+为满足“解压后直接双击 index.html、无需本地服务器”的要求，引擎使用单搜索线程，
+并在浏览器 Web Worker 中运行。这样不依赖 SharedArrayBuffer、跨源隔离或网络请求，
+同时不会阻塞棋盘界面。
+
+对应源码（包括本版本修改）位于 source\pikafish。主要修改：
+- src/main.cpp：浏览器分析接口，支持 MultiPV 和 searchMoves 限定着法搜索；
+- src/thread.cpp、src/thread_native.h、src/numa.h：Web Worker 内单线程执行；
+- src/Makefile：增加 SINGLE_THREADED_WASM 构建选项。
+
+运行时文件 engine-data.js 内嵌 pikafish.wasm 与 pikafish.nnue，确保 file:// 页面
+无需 fetch 即可加载全部资源。

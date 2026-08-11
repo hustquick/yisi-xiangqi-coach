@@ -1,6 +1,9 @@
 package com.yisi.xiangqicoach;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -18,17 +21,24 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.HashMap;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
+import org.json.JSONObject;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity implements CoachController.Listener {
+    private static final int OPEN_RECORD = 4102;
     private static final int PAPER = Color.rgb(248, 245, 234);
     private static final int INK = Color.rgb(26, 31, 26);
     private static final int GREEN = Color.rgb(23, 87, 64);
@@ -51,6 +61,7 @@ public final class MainActivity extends Activity implements CoachController.List
     private LinearLayout candidateList;
     private TextView roundCount, qualityText, historyText;
     private TextView situationPerspective;
+    private TextView recordTitleView;
     private LinearLayout setupPanel;
     private TextView humanSideButton;
     private final Map<GameMode, TextView> modeButtons = new HashMap<>();
@@ -90,11 +101,77 @@ public final class MainActivity extends Activity implements CoachController.List
 
         root.addView(buildHeader(), matchWrapBottom(18));
         root.addView(buildBoardSection(), matchWrapBottom(18));
-        root.addView(buildAnalysisCard(), matchWrapBottom(18));
-        root.addView(buildSituationCard(), matchWrapBottom(18));
-        root.addView(buildDepthCard(), matchWrapBottom(16));
+        root.addView(collapsible("教练分析", buildAnalysisCard(), true), matchWrapBottom(18));
+        root.addView(collapsible("局势图", buildSituationCard(), false), matchWrapBottom(18));
+        root.addView(collapsible("棋谱与存档", buildRecordToolbar(), false), matchWrapBottom(12));
+        root.addView(collapsible("分析深度", buildDepthCard(), false), matchWrapBottom(16));
         root.addView(buildFooter(), matchWrap());
         return scroll;
+    }
+
+    private View collapsible(String title, View content, boolean expanded) {
+        LinearLayout shell = column();
+        TextView heading = label((expanded ? "▴ " : "▾ ") + title, 14, GREEN, Typeface.BOLD);
+        heading.setGravity(Gravity.CENTER_VERTICAL); heading.setPadding(dp(14), 0, dp(14), 0);
+        heading.setBackground(round(withAlpha(Color.WHITE, 190), 10, dp(1), withAlpha(INK, 24)));
+        content.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        heading.setOnClickListener(view -> {
+            boolean show = content.getVisibility() != View.VISIBLE;
+            content.setVisibility(show ? View.VISIBLE : View.GONE);
+            heading.setText((show ? "▴ " : "▾ ") + title);
+        });
+        shell.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        shell.addView(content, matchWrap());
+        return shell;
+    }
+
+    private View buildRecordToolbar() {
+        LinearLayout card = card();
+        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+        recordTitleView = label(controller.recordTitle, 13, INK, Typeface.BOLD);
+        row.addView(recordTitleView, new LinearLayout.LayoutParams(0, dp(38), 1));
+        row.addView(smallButton("|‹", v -> controller.goToPly(0)), wrapWrap());
+        row.addView(smallButton("‹", v -> controller.goToPly(controller.activePly - 1)), wrapWrap());
+        row.addView(smallButton("›", v -> controller.goToPly(controller.activePly + 1)), wrapWrap());
+        row.addView(smallButton("›|", v -> controller.goToPly(controller.history.size())), wrapWrap());
+        card.addView(row, matchWrapBottom(8));
+        LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(smallButton("载入棋谱", v -> showRecordDialog()), new LinearLayout.LayoutParams(0, dp(40), 1));
+        Button save = smallButton("保存棋局", v -> controller.saveGame()); LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(40), 1); saveParams.setMarginStart(dp(8)); actions.addView(save, saveParams);
+        card.addView(actions, matchWrap()); return card;
+    }
+
+    private void showRecordDialog() {
+        String[] choices = {"选择本地 XQF / FEN 文件", "粘贴 FEN 局面", "载入本机存档"};
+        new AlertDialog.Builder(this).setTitle("载入棋谱或局面").setItems(choices, (dialog, which) -> {
+            if (which == 0) { Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE); startActivityForResult(intent, OPEN_RECORD); }
+            else if (which == 1) showFenDialog(); else showSavedGames();
+        }).setNegativeButton("取消", null).show();
+    }
+
+    private void showFenDialog() {
+        EditText input = new EditText(this); input.setHint("粘贴 FEN"); input.setMinLines(3); input.setPadding(dp(18), dp(8), dp(18), dp(8));
+        new AlertDialog.Builder(this).setTitle("FEN 局面").setView(input).setPositiveButton("载入", (d, w) -> {
+            try { controller.loadRecord(GameRecordIO.parseFen(input.getText().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), "FEN 局面")); }
+            catch (Exception e) { new AlertDialog.Builder(this).setMessage(e.getMessage()).setPositiveButton("好", null).show(); }
+        }).setNegativeButton("取消", null).show();
+    }
+
+    private void showSavedGames() {
+        List<JSONObject> games = controller.savedGames(); if (games.isEmpty()) { new AlertDialog.Builder(this).setMessage("还没有保存的棋局").setPositiveButton("好", null).show(); return; }
+        String[] titles = new String[games.size()]; for (int i = 0; i < games.size(); i++) titles[i] = games.get(i).optString("title", "象棋对局");
+        new AlertDialog.Builder(this).setTitle("本机存档").setItems(titles, (d, which) -> { try { controller.loadRecord(GameRecordIO.fromJson(games.get(which))); } catch (Exception e) { } }).setNegativeButton("取消", null).show();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data); if (requestCode != OPEN_RECORD || resultCode != RESULT_OK || data == null) return;
+        Uri uri = data.getData(); if (uri == null) return;
+        try (InputStream stream = getContentResolver().openInputStream(uri); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192]; int read; while ((read = stream.read(buffer)) >= 0) output.write(buffer, 0, read);
+            String name = uri.getLastPathSegment() == null ? "导入棋局" : uri.getLastPathSegment();
+            GameRecordIO.Record record = name.toLowerCase(Locale.ROOT).endsWith(".xqf") ? GameRecordIO.parseXqf(output.toByteArray(), name.replaceFirst("(?i)\\.xqf$", "")) : GameRecordIO.parseFen(output.toByteArray(), name);
+            controller.loadRecord(record);
+        } catch (Exception e) { new AlertDialog.Builder(this).setTitle("载入失败").setMessage(e.getMessage()).setPositiveButton("好", null).show(); }
     }
 
     private View buildHeader() {
@@ -156,6 +233,10 @@ public final class MainActivity extends Activity implements CoachController.List
         sideText = label("● 红方走棋", 18, RED, Typeface.BOLD);
         toolbar.addView(sideText, new LinearLayout.LayoutParams(0, dp(46), 1));
 
+        Button perspective = smallButton("⇅", view -> controller.toggleBoardPerspective());
+        perspective.setContentDescription("切换红黑视角");
+        toolbar.addView(perspective, wrapWrap());
+
         bestToggle = label("优", 18, GREEN, Typeface.BOLD);
         bestToggle.setGravity(Gravity.CENTER);
         bestToggle.setContentDescription("显示全局候选箭头");
@@ -165,11 +246,8 @@ public final class MainActivity extends Activity implements CoachController.List
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        Button perspective = smallButton("⇅", view -> controller.toggleBoardPerspective());
-        perspective.setContentDescription("切换红黑视角");
         undoButton = smallButton("↶ 悔棋", view -> controller.undo());
         Button reset = smallButton("↻ 重开", view -> controller.reset());
-        controls.addView(perspective, wrapWrap());
         controls.addView(undoButton, wrapWrap());
         controls.addView(reset, wrapWrap());
         toolbar.addView(controls, new LinearLayout.LayoutParams(0, dp(46), 1));
@@ -348,6 +426,11 @@ public final class MainActivity extends Activity implements CoachController.List
     }
 
     private void updateUi() {
+        recordTitleView.setText(controller.recordTitle + "  ·  " + controller.activePly + "/" + controller.history.size() + " 步");
+        if (controller.recordMessage != null) {
+            String message = controller.recordMessage; controller.recordMessage = null;
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        }
         boolean hasError = controller.errorMessage != null;
         engineStatus.setText(controller.gameMode == GameMode.SETUP ? "● 摆盘模式" : controller.gameMode == GameMode.COMPUTER && !controller.canHumanMove() ? "● 电脑正在思考" : hasError ? "● 引擎暂不可用" : controller.analyzing ? "● 本地皮卡鱼计算中" : "● 本地皮卡鱼已就绪 · " + controller.currentScore());
         engineStatus.setTextColor(hasError ? RED : controller.analyzing ? Color.rgb(218, 132, 37) : GREEN);

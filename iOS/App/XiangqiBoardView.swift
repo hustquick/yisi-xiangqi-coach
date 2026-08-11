@@ -27,6 +27,20 @@ struct XiangqiBoardView: View {
                 previewMovingPieces(metrics)
                 playbackBanner
             }
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                SpatialTapGesture().onEnded { event in
+                    guard !viewModel.isPreviewingVariation,
+                          viewModel.timelinePreviewPly == nil else { return }
+                    let visualFile = Int(round((event.location.x - metrics.origin.x) / metrics.cell))
+                    let visualRank = Int(round((event.location.y - metrics.origin.y) / metrics.cell))
+                    guard (0...8).contains(visualFile), (0...9).contains(visualRank) else { return }
+                    let file = viewModel.boardFlipped ? 8 - visualFile : visualFile
+                    let rank = viewModel.boardFlipped ? 9 - visualRank : visualRank
+                    viewModel.tap(file: file, rank: rank)
+                },
+                including: .all
+            )
         }
         .aspectRatio(0.77, contentMode: .fit)
         .accessibilityElement(children: .contain)
