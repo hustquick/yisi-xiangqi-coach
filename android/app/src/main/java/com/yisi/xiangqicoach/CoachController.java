@@ -490,6 +490,10 @@ final class CoachController {
         }
         main.postDelayed(() -> {
             if (selectionGeneration != generation || !fen.equals(fenAtStart)) return;
+            // The piece-specific request replaces the global deep pass. Mark it
+            // stale before stopping native search so it cannot enqueue stage two.
+            positionGeneration++;
+            analyzing = false;
             interruptAnalysis();
             backfillGeneration++;
             engineQueue.execute(() -> {
@@ -497,10 +501,22 @@ final class CoachController {
                 if (selectionGeneration != generation) return;
                 ensureInitialized();
                 if (selectionGeneration != generation) return;
-                List<EngineLine> lines = analyze(fenAtStart, depthAtStart, Math.min(12, moves.size()), moves);
+                int previewDepth = Math.min(7, depthAtStart);
+                List<EngineLine> previewLines = analyze(fenAtStart, previewDepth, Math.min(12, moves.size()), moves);
                 main.post(() -> {
                     if (selectionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
-                    selectedLines = lines;
+                    selectedLines = previewLines;
+                    notifyChanged();
+                });
+                List<EngineLine> completedLines = previewLines;
+                if (previewDepth < depthAtStart) {
+                    if (selectionGeneration != generation || !fen.equals(fenAtStart)) return;
+                    completedLines = analyze(fenAtStart, depthAtStart, Math.min(12, moves.size()), moves);
+                }
+                List<EngineLine> finalLines = completedLines;
+                main.post(() -> {
+                    if (selectionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
+                    selectedLines = finalLines;
                     analyzingSelection = false;
                     notifyChanged();
                 });
@@ -533,18 +549,30 @@ final class CoachController {
         errorMessage = null;
         globalLines = new ArrayList<>();
         notifyChanged();
+        interruptAnalysis();
 
         engineQueue.execute(() -> {
             try {
                 if (positionGeneration != generation) return;
                 ensureInitialized();
                 if (positionGeneration != generation) return;
-                if (positionGeneration != generation) return;
-                List<EngineLine> lines = analyze(fenAtStart, depthAtStart, 5, Collections.emptyList());
+                int previewDepth = Math.min(7, depthAtStart);
+                List<EngineLine> previewLines = analyze(fenAtStart, previewDepth, 5, Collections.emptyList());
                 main.post(() -> {
                     if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
-                    globalLines = lines;
-                    Integer score = lines.isEmpty() ? null : lines.get(0).centipawns();
+                    globalLines = previewLines;
+                    notifyChanged();
+                });
+                List<EngineLine> completedLines = previewLines;
+                if (previewDepth < depthAtStart) {
+                    if (positionGeneration != generation || !fen.equals(fenAtStart)) return;
+                    completedLines = analyze(fenAtStart, depthAtStart, 5, Collections.emptyList());
+                }
+                List<EngineLine> finalLines = completedLines;
+                main.post(() -> {
+                    if (positionGeneration != generation || !fen.equals(fenAtStart) || analysisDepth != depthAtStart) return;
+                    globalLines = finalLines;
+                    Integer score = finalLines.isEmpty() ? null : finalLines.get(0).centipawns();
                     if (score != null) positionScores.put(activePly, sideToMove() == Side.RED ? score : -score);
                     analyzing = false;
                     errorMessage = null;

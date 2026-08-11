@@ -50,8 +50,11 @@ else { fatalError("Could not create the icon glyph") }
 let glyphBounds = glyphPath.boundingBoxOfPath
 let context = NSGraphicsContext.current!.cgContext
 context.saveGState()
+// The path's mathematical bounds are centered, but the long lower-right stroke
+// makes the character look left-heavy at icon size. Apply a small optical shift.
+let opticalOffsetX: CGFloat = 18
 context.translateBy(
-    x: canvas.midX - glyphBounds.midX,
+    x: canvas.midX - glyphBounds.midX + opticalOffsetX,
     y: canvas.midY - glyphBounds.midY
 )
 context.addPath(glyphPath)

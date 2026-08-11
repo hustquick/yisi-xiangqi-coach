@@ -36,7 +36,7 @@ final class PikafishService: @unchecked Sendable {
     static let shared = PikafishService()
 
     // Engine work must never compete with touch handling and SwiftUI rendering.
-    // A utility queue plus a single search thread is deliberately conservative:
+    // A utility queue plus a small search-thread pool is deliberately conservative:
     // analysis takes a little longer, but moving a piece remains the priority.
     private let queue = DispatchQueue(label: "com.yisi.pikafish", qos: .utility)
     private var initialized = false
@@ -105,7 +105,10 @@ final class PikafishService: @unchecked Sendable {
             throw PikafishError.missingNetwork
         }
         let response: String = network.withCString { pointer in
-            guard let result = pf_initialize(pointer, 1, 64) else { return "" }
+            // Two search threads materially reduce MultiPV latency on modern
+            // iPhones while still reserving CPU capacity for SwiftUI and touch.
+            let threads = max(1, min(2, ProcessInfo.processInfo.activeProcessorCount - 1))
+            guard let result = pf_initialize(pointer, Int32(threads), 64) else { return "" }
             return String(cString: result)
         }
         if response.hasPrefix("error:") { throw PikafishError.engine(String(response.dropFirst(6))) }
@@ -128,6 +131,11 @@ final class PikafishService: @unchecked Sendable {
             }
         } onCancel: {
             flag.cancel()
+            // Release the serial native-engine queue immediately when a newer
+            // position supersedes this task.
+            DispatchQueue.global(qos: .userInteractive).async {
+                pf_stop()
+            }
         }
     }
 }

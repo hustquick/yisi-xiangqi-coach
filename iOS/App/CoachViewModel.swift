@@ -633,12 +633,20 @@ final class CoachViewModel: ObservableObject {
                   selectedSquare == piece.uciSquare
             else { return }
 
+            // A piece-specific request supersedes the global deep search. Cancel
+            // its Swift task as well as the native search so this request cannot
+            // sit behind an obsolete second-stage analysis.
+            positionAnalysisTask?.cancel()
+            positionAnalysisTask = nil
+            positionGeneration = UUID()
+            isAnalyzing = false
             engine.stop()
             scoreBackfillTask?.cancel()
             do {
-                let lines = try await engine.analyze(
+                let previewDepth = min(7, depthAtStart)
+                var lines = try await engine.analyze(
                     fen: fenAtStart,
-                    depth: depthAtStart,
+                    depth: previewDepth,
                     multiPV: min(12, moves.count),
                     searchMoves: moves
                 )
@@ -647,6 +655,20 @@ final class CoachViewModel: ObservableObject {
                       analysisDepth == depthAtStart
                 else { return }
                 selectedLines = lines
+
+                if previewDepth < depthAtStart {
+                    lines = try await engine.analyze(
+                        fen: fenAtStart,
+                        depth: depthAtStart,
+                        multiPV: min(12, moves.count),
+                        searchMoves: moves
+                    )
+                    guard selectionGeneration == generation,
+                          fen == fenAtStart,
+                          analysisDepth == depthAtStart
+                    else { return }
+                    selectedLines = lines
+                }
                 isAnalyzingSelection = false
             } catch {
                 guard selectionGeneration == generation,
@@ -692,12 +714,22 @@ final class CoachViewModel: ObservableObject {
                       fen == fenAtStart,
                       analysisDepth == depthAtStart
                 else { return }
-                let lines = try await engine.analyze(fen: fenAtStart, depth: depthAtStart, multiPV: 5)
+                let previewDepth = min(7, depthAtStart)
+                var lines = try await engine.analyze(fen: fenAtStart, depth: previewDepth, multiPV: 5)
                 guard positionGeneration == generation,
                       fen == fenAtStart,
                       analysisDepth == depthAtStart
                 else { return }
                 globalLines = lines
+
+                if previewDepth < depthAtStart {
+                    lines = try await engine.analyze(fen: fenAtStart, depth: depthAtStart, multiPV: 5)
+                    guard positionGeneration == generation,
+                          fen == fenAtStart,
+                          analysisDepth == depthAtStart
+                    else { return }
+                    globalLines = lines
+                }
                 if let score = lines.first?.centipawns {
                     positionScores[activePly] = sideToMove == .red ? score : -score
                 }
