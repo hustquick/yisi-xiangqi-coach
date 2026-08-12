@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = CoachViewModel()
     @State private var boardFocusRequest = 0
     @State private var showsRecordSheet = false
@@ -10,12 +11,28 @@ struct ContentView: View {
     @State private var analysisExpanded = true
     @State private var situationExpanded = false
     @State private var recordsExpanded = false
-    @State private var depthExpanded = false
+    @State private var settingsExpanded = false
 
-    private let paper = Color(red: 0.97, green: 0.96, blue: 0.92)
-    private let ink = Color(red: 0.10, green: 0.12, blue: 0.10)
-    private let green = Color(red: 0.09, green: 0.34, blue: 0.25)
-    private let red = Color(red: 0.73, green: 0.17, blue: 0.13)
+    private var isDark: Bool { colorScheme == .dark }
+    private var paper: Color {
+        isDark ? Color(red: 0.045, green: 0.060, blue: 0.052) : Color(red: 0.97, green: 0.96, blue: 0.92)
+    }
+    private var ink: Color {
+        isDark ? Color(red: 0.91, green: 0.93, blue: 0.91) : Color(red: 0.10, green: 0.12, blue: 0.10)
+    }
+    private var green: Color {
+        isDark ? Color(red: 0.34, green: 0.77, blue: 0.56) : Color(red: 0.09, green: 0.34, blue: 0.25)
+    }
+    private var red: Color {
+        isDark ? Color(red: 0.95, green: 0.42, blue: 0.36) : Color(red: 0.73, green: 0.17, blue: 0.13)
+    }
+    private var surface: Color {
+        isDark ? Color(red: 0.085, green: 0.115, blue: 0.100) : Color.white.opacity(0.62)
+    }
+    private var softSurface: Color {
+        isDark ? Color(red: 0.105, green: 0.145, blue: 0.125) : Color.white.opacity(0.55)
+    }
+    private var surfaceBorder: Color { isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -64,8 +81,8 @@ struct ContentView: View {
                 boardSection
                 collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
                 collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
                 collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
-                collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
                 footer
             }
             .padding(.horizontal, 14)
@@ -82,8 +99,8 @@ struct ContentView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 14) {
                     collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
                     collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                    collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
                     collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
-                    collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
                 }
                 footer
             }
@@ -107,8 +124,8 @@ struct ContentView: View {
                     LazyVStack(spacing: 14) {
                         collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
                         collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                        collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
                         collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
-                        collapsible("分析深度", isExpanded: $depthExpanded) { depthSelector }
                         footer
                     }
                     .padding(.trailing, 6)
@@ -133,7 +150,7 @@ struct ContentView: View {
                         .foregroundStyle(green)
                 }
                 .padding(.horizontal, 14).frame(height: 44)
-                .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
+                .background(surface, in: RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
             if isExpanded.wrappedValue { content() }
@@ -155,7 +172,7 @@ struct ContentView: View {
             Button("保存") { viewModel.saveGame() }.buttonStyle(.borderedProminent).tint(green)
         }
         .buttonStyle(.bordered)
-        .padding(12).background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
+        .padding(12).background(surface, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var recordSheet: some View {
@@ -182,11 +199,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("象")
-                .font(.system(size: 24, weight: .bold, design: .serif))
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
-                .background(red, in: RoundedRectangle(cornerRadius: 9))
+            brandLogo
             VStack(alignment: .leading, spacing: 1) {
                 Text("弈思").font(.title3.bold())
                 Text("象棋思考教练 · iOS").font(.caption).foregroundStyle(.secondary)
@@ -207,6 +220,23 @@ struct ContentView: View {
         .foregroundStyle(ink)
     }
 
+    @ViewBuilder private var brandLogo: some View {
+        let resource = isDark ? "AppIconDark" : "AppIcon"
+        if let path = Bundle.main.path(forResource: resource, ofType: "png"),
+           let image = UIImage(contentsOfFile: path) {
+            Image(uiImage: image)
+                .resizable().scaledToFit()
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            Text("象")
+                .font(.system(size: 24, weight: .bold, design: .serif))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(red, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
     private var depthSelector: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 16) {
@@ -219,8 +249,8 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
+        .background(surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(surfaceBorder))
     }
 
     private var depthSelectorLabel: some View {
@@ -246,8 +276,14 @@ struct ContentView: View {
 
     private var boardSection: some View {
         VStack(spacing: 8) {
-            gameModeControls
             HStack {
+                    Button { viewModel.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                        .disabled(viewModel.activePly == 0).accessibilityLabel("悔棋")
+                    Button { viewModel.goToPly(viewModel.activePly + 1) } label: { Image(systemName: "arrow.uturn.forward") }
+                        .disabled(viewModel.activePly >= viewModel.history.count).accessibilityLabel("前进")
+                    Spacer()
+                    candidateArrowToggle
+                    Spacer()
                     Label("\(viewModel.sideToMove.title)走棋", systemImage: "circle.fill")
                         .font(.headline)
                         .foregroundStyle(viewModel.sideToMove == .red ? red : ink)
@@ -256,10 +292,8 @@ struct ContentView: View {
                         Image(systemName: "arrow.up.arrow.down")
                     }
                     .accessibilityLabel(viewModel.boardFlipped ? "切换为红方视角" : "切换为黑方视角")
-                    candidateArrowToggle
-                    Button("悔棋", systemImage: "arrow.uturn.backward") { viewModel.undo() }
-                        .disabled(viewModel.activePly == 0)
-                    Button("重开", systemImage: "arrow.clockwise") { viewModel.reset() }
+                    Button { viewModel.reset() } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel("重开")
             }
             .buttonStyle(.borderless)
             XiangqiBoardView(viewModel: viewModel)
@@ -298,6 +332,13 @@ struct ContentView: View {
         }
     }
 
+    private var combinedSettings: some View {
+        VStack(spacing: 12) {
+            gameModeControls
+            depthSelector
+        }
+    }
+
     private var setupControls: some View {
         VStack(spacing: 9) {
             HStack {
@@ -320,8 +361,8 @@ struct ContentView: View {
             if let message = viewModel.setupMessage { Text(message).font(.caption).foregroundStyle(.red) }
         }
         .padding(10)
-        .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.black.opacity(0.10)))
+        .background(surface, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(surfaceBorder))
     }
 
     private func setupToolButton(_ title: String, tool: SetupTool) -> some View {
@@ -498,7 +539,7 @@ struct ContentView: View {
             Text("走后 \(viewModel.scoreText(for: line))").font(.caption.bold()).monospacedDigit()
         }
         .padding(10)
-        .background(isHighlighted ? green.opacity(0.10) : Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+        .background(isHighlighted ? green.opacity(isDark ? 0.18 : 0.10) : softSurface, in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(isHighlighted ? green.opacity(0.72) : .gray.opacity(0.18), lineWidth: isHighlighted ? 1.5 : 1))
         .contentShape(Rectangle())
         .gesture(candidateTapGesture(for: line))
@@ -544,7 +585,7 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+        .background(softSurface, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var situationPanel: some View {
@@ -580,7 +621,7 @@ struct ContentView: View {
             .foregroundStyle(side.map { moveColor(for: $0).opacity(isFuture ? 0.46 : 1) }
                 ?? (isCurrent ? green : ink.opacity(isFuture ? 0.46 : 0.82)))
             .padding(.horizontal, 9).padding(.vertical, 6)
-            .background(isCurrent ? green.opacity(0.12) : .white.opacity(0.6), in: Capsule())
+            .background(isCurrent ? green.opacity(isDark ? 0.20 : 0.12) : softSurface, in: Capsule())
             .overlay(Capsule().stroke(isCurrent ? green.opacity(0.7) : .gray.opacity(isFuture ? 0.18 : 0.28)))
             .buttonStyle(.plain)
     }
@@ -609,7 +650,7 @@ struct ContentView: View {
 private extension View {
     func panelStyle() -> some View {
         padding(16)
-            .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
+            .background(Color(uiColor: .secondarySystemBackground).opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08)))
     }
 }

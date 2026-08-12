@@ -52,6 +52,7 @@ public final class MainActivity extends Activity implements CoachController.List
     private TextView boardHint;
     private TextView bestToggle;
     private Button undoButton;
+    private Button redoButton;
     private XiangqiBoardView boardView;
     private SituationChartView situationChartView;
     private LinearLayout reviewBox;
@@ -103,10 +104,15 @@ public final class MainActivity extends Activity implements CoachController.List
 
         root.addView(buildHeader(), matchWrapBottom(18));
         root.addView(buildBoardSection(), matchWrapBottom(18));
+        LinearLayout settings = column();
+        settings.addView(buildModeControls(), matchWrapBottom(10));
+        settings.addView(buildDepthCard(), matchWrap());
+        setupPanel = buildSetupPanel();
+        settings.addView(setupPanel, matchWrapBottom(8));
         root.addView(collapsible("教练分析", buildAnalysisCard(), true), matchWrapBottom(18));
         root.addView(collapsible("局势图", buildSituationCard(), false), matchWrapBottom(18));
+        root.addView(collapsible("对弈与分析设置", settings, false), matchWrapBottom(18));
         root.addView(collapsible("棋谱与存档", buildRecordToolbar(), false), matchWrapBottom(12));
-        root.addView(collapsible("分析深度", buildDepthCard(), false), matchWrapBottom(16));
         root.addView(buildFooter(), matchWrap());
         return scroll;
     }
@@ -227,17 +233,18 @@ public final class MainActivity extends Activity implements CoachController.List
 
     private View buildBoardSection() {
         LinearLayout section = column();
-        section.addView(buildModeControls(), matchWrapBottom(8));
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
 
-        sideText = label("● 红方走棋", 18, RED, Typeface.BOLD);
-        toolbar.addView(sideText, new LinearLayout.LayoutParams(0, dp(46), 1));
-
-        Button perspective = smallButton("⇅", view -> controller.toggleBoardPerspective());
-        perspective.setContentDescription("切换红黑视角");
-        toolbar.addView(perspective, wrapWrap());
+        LinearLayout historyControls = new LinearLayout(this);
+        undoButton = smallButton("↶", view -> controller.undo());
+        undoButton.setContentDescription("悔棋");
+        redoButton = smallButton("↷", view -> controller.goToPly(controller.activePly + 1));
+        redoButton.setContentDescription("前进");
+        historyControls.addView(undoButton, wrapWrap());
+        historyControls.addView(redoButton, wrapWrap());
+        toolbar.addView(historyControls, wrapWrap());
 
         bestToggle = label("优", 18, GREEN, Typeface.BOLD);
         bestToggle.setGravity(Gravity.CENTER);
@@ -245,21 +252,25 @@ public final class MainActivity extends Activity implements CoachController.List
         bestToggle.setOnClickListener(view -> controller.toggleBestArrows());
         toolbar.addView(bestToggle, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
+        sideText = label("● 红方走棋", 18, RED, Typeface.BOLD);
+        sideText.setGravity(Gravity.CENTER);
+        toolbar.addView(sideText, new LinearLayout.LayoutParams(0, dp(46), 1));
+
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        undoButton = smallButton("↶ 悔棋", view -> controller.undo());
-        Button reset = smallButton("↻ 重开", view -> controller.reset());
-        controls.addView(undoButton, wrapWrap());
+        Button perspective = smallButton("⇅", view -> controller.toggleBoardPerspective());
+        perspective.setContentDescription("切换红黑视角");
+        Button reset = smallButton("↻", view -> controller.reset());
+        reset.setContentDescription("重开");
+        controls.addView(perspective, wrapWrap());
         controls.addView(reset, wrapWrap());
-        toolbar.addView(controls, new LinearLayout.LayoutParams(0, dp(46), 1));
+        toolbar.addView(controls, wrapWrap());
         section.addView(toolbar, matchWrapBottom(6));
 
         boardView = new XiangqiBoardView(this);
         boardView.setController(controller);
         section.addView(boardView, matchWrapBottom(8));
-        setupPanel = buildSetupPanel();
-        section.addView(setupPanel, matchWrapBottom(8));
         boardHint = label("● 点击本方棋子开始；候选着法可双击直接落子", 12, MUTED, Typeface.NORMAL);
         boardHint.setGravity(Gravity.CENTER);
         section.addView(boardHint, matchWrap());
@@ -467,6 +478,8 @@ public final class MainActivity extends Activity implements CoachController.List
                 dp(1), withAlpha(GREEN, 130)));
         undoButton.setEnabled(controller.activePly > 0);
         undoButton.setAlpha(controller.activePly > 0 ? 1f : 0.35f);
+        redoButton.setEnabled(controller.activePly < controller.history.size());
+        redoButton.setAlpha(controller.activePly < controller.history.size() ? 1f : 0.35f);
         situationPerspective.setText("正在查看：" + (controller.activePly == 0 ? "开局" : "第 " + controller.activePly + " 步后") + " · 红方视角");
         boardView.invalidate();
         situationChartView.invalidate();

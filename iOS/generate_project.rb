@@ -22,7 +22,7 @@ cpp_files = Dir.glob(File.join(ROOT, "ThirdParty", "Pikafish", "src", "**", "*.c
   .reject { |path| path.end_with?("/main.cpp") || path.include?("/universal/") }
   .map { |path| path.delete_prefix("#{ROOT}/") }
 source_files = swift_files + ["Bridge/PikafishBridge.mm"] + cpp_files
-resource_files = ["App/Resources/AppIcon.png", "App/Resources/pikafish.nnue", "ThirdParty/Pikafish/COPYING.txt"]
+resource_files = ["App/Resources/AppIcon.png", "App/Resources/AppIconDark.png", "App/Resources/pikafish.nnue", "ThirdParty/Pikafish/COPYING.txt"]
 visible_files = source_files + resource_files + ["App/Info.plist", "Bridge/PikafishBridge.h"]
 
 missing = visible_files.reject { |path| File.exist?(File.join(ROOT, path)) }

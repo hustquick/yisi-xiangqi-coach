@@ -44,7 +44,10 @@ test("keeps engine cancellation, selectable depth and arrow overlay wired", asyn
   assert.match(page, /DEPTH_OPTIONS = \[8, 10, 12, 14, 16\]/);
   assert.match(page, /CandidateArrows/);
   assert.match(page, /boardFlipped/);
-  assert.match(page, /切换为黑方视角/);
+  assert.match(page, /aria-label="切换红黑视角"/);
+  assert.match(page, /className="board-lines"/);
+  assert.match(page, /M1 0V4 M1 5V9/);
+  assert.doesNotMatch(page, /className="palace p[12]"/);
   assert.match(page, /flipped=\{boardFlipped\}/);
   assert.match(page, /SituationChart/);
   assert.match(page, /function goToPly/);
@@ -80,9 +83,9 @@ test("keeps engine cancellation, selectable depth and arrow overlay wired", asyn
   assert.match(page, /完成摆盘/);
   assert.match(page, /scheduleComputerMove|aiPositionRef/);
   assert.ok(
-    page.indexOf('className="board-hint"') <
-      page.indexOf('className="game-mode-card panel"'),
-    "game mode selector should follow the board",
+    page.indexOf('className="board-wrap"') <
+      page.indexOf('className="coach-sidebar"'),
+    "secondary controls should follow the board in the right sidebar",
   );
   assert.ok(
     page.indexOf("<SituationChart") < page.indexOf("分析深度"),
@@ -92,6 +95,9 @@ test("keeps engine cancellation, selectable depth and arrow overlay wired", asyn
   assert.match(css, /\.game-mode-bar/);
   assert.match(css, /\.setup-panel/);
   assert.match(css, /\.top-coordinates\{margin-bottom:10px\}/);
+  assert.match(css, /\.board\{background:#d9b071;background-image:none\}/);
+  assert.match(css, /\.board:after\{display:none\}/);
+  assert.match(css, /\.board-lines path\{[^}]*vector-effect:non-scaling-stroke/);
   assert.match(css, /\.bottom-coordinates\{margin-top:10px\}/);
   assert.match(css, /\.trend-hit-area/);
   assert.match(css, /\.variation-playback/);
@@ -101,4 +107,21 @@ test("keeps engine cancellation, selectable depth and arrow overlay wired", asyn
   assert.match(worker, /type === "stop"/);
   assert.match(server, /req\.url === "\/stop"/);
   assert.match(icon, />象<\/text>/);
+});
+
+test("keeps the board left and all secondary modules in one right sidebar", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const board = page.indexOf('className="board-wrap"');
+  const sidebar = page.indexOf('className="coach-sidebar"');
+  assert.ok(board >= 0 && sidebar > board);
+  assert.ok(page.indexOf('title="教练分析"', sidebar) >= sidebar);
+  assert.ok(page.indexOf('title="局势图"', sidebar) >= sidebar);
+  assert.ok(page.indexOf('title="对弈与分析设置"', sidebar) >= sidebar);
+  assert.ok(
+    page.indexOf('title="局势图"', sidebar) <
+      page.indexOf('title="对弈与分析设置"', sidebar),
+    "match and analysis settings should follow the situation chart",
+  );
+  assert.ok(page.indexOf('title="棋谱与存档"', sidebar) >= sidebar);
+  assert.equal(page.includes('title="对弈模式"'), false);
 });

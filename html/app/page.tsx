@@ -1915,99 +1915,25 @@ export default function Home() {
         </div>
       </header>
 
-      <Collapsible title="棋谱与存档"><section className="record-toolbar panel" aria-label="棋谱与存档">
-        <div className="record-summary">
-          <span aria-hidden="true">谱</span>
-          <div>
-            <small>当前棋局</small>
-            <strong>{recordTitle}</strong>
-          </div>
-          <em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em>
-        </div>
-        <div className="record-stepper" aria-label="棋谱步进">
-          <button onClick={() => goToPly(0)} disabled={activePly === 0} title="回到开始"><i>⇤</i><span>开始</span></button>
-          <button onClick={() => goToPly(activePly - 1)} disabled={activePly === 0} title="上一步"><i>‹</i><span>上一步</span></button>
-          <button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length} title="下一步"><span>下一步</span><i>›</i></button>
-          <button onClick={() => goToPly(history.length)} disabled={activePly === history.length} title="前往末尾"><span>末尾</span><i>⇥</i></button>
-        </div>
-        <div className="record-actions">
-          <button className="load-record" onClick={() => { refreshSavedGames(); setShowRecordPanel((value) => !value); }}><i>↥</i> 载入棋谱</button>
-          <button className="save-record" onClick={saveGame}><i>⌑</i> 保存棋局</button>
-        </div>
-        <input
-          ref={recordFileRef}
-          type="file"
-          hidden
-          accept=".xqf,.fen,.json,text/plain,application/json"
-          onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecordFile(file); }}
-        />
-      </section></Collapsible>
-      {showRecordPanel && (
-        <section className="record-loader panel">
-          <div className="loader-heading">
-            <div><strong>载入棋谱或局面</strong><small>文件只在本机浏览器中读取，不会上传</small></div>
-            <button onClick={() => setShowRecordPanel(false)} aria-label="关闭载入面板">×</button>
-          </div>
-          <div className="loader-grid">
-            <button className="file-load" onClick={() => recordFileRef.current?.click()}>
-              <b>选择本地文件</b><span>XQF 1.0 · FEN · 弈思 JSON 存档</span>
-            </button>
-            <div className="fen-load">
-              <label htmlFor="fen-input">粘贴 FEN 局面</label>
-              <textarea id="fen-input" value={fenInput} onChange={(event) => setFenInput(event.target.value)} placeholder="例如：rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w" />
-              <button onClick={importFenText} disabled={!fenInput.trim()}>载入此局面</button>
-            </div>
-          </div>
-          <div className="saved-games">
-            <strong>本机存档</strong>
-            {savedGames.length ? savedGames.map((saved) => (
-              <button key={saved.id} onClick={() => loadSavedGame(saved.id)}>
-                <span>{saved.title}</span><small>{new Date(saved.savedAt).toLocaleString("zh-CN")}</small>
-              </button>
-            )) : <em>还没有保存的棋局</em>}
-          </div>
-        </section>
-      )}
       {recordMessage && <div className="record-message" role="status"><span>{recordMessage}</span><button onClick={() => setRecordMessage("")}>×</button></div>}
 
       <section className="workspace">
         <div className="board-wrap" ref={boardSectionRef}>
           <div className="board-top">
+            <div className="history-tools">
+              <button onClick={undo} disabled={activePly === 0} aria-label="悔棋" title="悔棋">↶</button>
+              <button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length} aria-label="前进" title="前进">↷</button>
+            </div>
+            <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={engineState !== "ready" || !candidates.length} aria-pressed={showBestArrows} aria-label={showBestArrows ? "隐藏全局候选箭头" : "显示全局候选箭头"}>优</button>
             <div className="turn-label">
               <b className={turn === "red" ? "active red-turn" : "black-turn"}>
                 {turn === "red" ? "红方" : "黑方"}
               </b>
               <span>走棋</span>
             </div>
-            <button
-              className="perspective-button"
-              onClick={() => setBoardFlipped((value) => !value)}
-              aria-pressed={boardFlipped}
-              aria-label={boardFlipped ? "切换为红方视角" : "切换为黑方视角"}
-            >
-              ⇅ 视角
-            </button>
-            <button
-              className={`best-toggle ${showBestArrows ? "active" : ""}`}
-              onClick={() => setShowBestArrows((value) => !value)}
-              disabled={engineState !== "ready" || !candidates.length}
-              aria-pressed={showBestArrows}
-              aria-label={
-                showBestArrows ? "隐藏全局候选箭头" : "显示全局候选箭头"
-              }
-            >
-              优
-            </button>
             <div className="tools">
-              <button
-                className="undo-button"
-                onClick={undo}
-                disabled={activePly === 0}
-              >
-                ↶ 悔棋
-              </button>
-              <button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length}>↷ 前进</button>
-              <button onClick={reset}>↻ 重开</button>
+              <button onClick={() => setBoardFlipped((value) => !value)} aria-label="切换红黑视角" title="切换视角">⇅</button>
+              <button onClick={reset} aria-label="重开" title="重开">↻</button>
             </div>
           </div>
           <div
@@ -2022,12 +1948,20 @@ export default function Home() {
             ))}
           </div>
           <div className="board" aria-label="中国象棋棋盘">
+            <svg
+              className="board-lines"
+              viewBox="0 0 8 9"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path d="M0 0H8V9H0Z M0 1H8 M0 2H8 M0 3H8 M0 4H8 M0 5H8 M0 6H8 M0 7H8 M0 8H8" />
+              <path d="M1 0V4 M1 5V9 M2 0V4 M2 5V9 M3 0V4 M3 5V9 M4 0V4 M4 5V9 M5 0V4 M5 5V9 M6 0V4 M6 5V9 M7 0V4 M7 5V9" />
+              <path d="M3 0L5 2 M5 0L3 2 M3 7L5 9 M5 7L3 9" />
+            </svg>
             <div className="river">
               <span>{boardFlipped ? "漢 界" : "楚 河"}</span>
               <span>{boardFlipped ? "楚 河" : "漢 界"}</span>
             </div>
-            <div className="palace p1" />
-            <div className="palace p2" />
             {!previewingBoard && showBestArrows && engineState === "ready" && (
               <CandidateArrows
                 candidates={candidates}
@@ -2171,55 +2105,6 @@ export default function Home() {
               <span key={label}>{label}</span>
             ))}
           </div>
-          {gameMode === "setup" && (
-            <div className="setup-panel">
-              <div className="setup-actions">
-                <button
-                  className={setupBrush === "move" ? "active" : ""}
-                  onClick={() => setSetupBrush("move")}
-                >
-                  移动
-                </button>
-                <button
-                  className={setupBrush === "erase" ? "active" : ""}
-                  onClick={() => setSetupBrush("erase")}
-                >
-                  删除
-                </button>
-                <button
-                  onClick={() =>
-                    setTurn((side) => (side === "red" ? "black" : "red"))
-                  }
-                >
-                  {turn === "red" ? "红方先行" : "黑方先行"}
-                </button>
-                <button className="finish" onClick={finishSetup}>
-                  完成摆盘
-                </button>
-              </div>
-              {(["red", "black"] as Side[]).map((side) => (
-                <div className={`setup-pieces ${side}`} key={side}>
-                  <span>{side === "red" ? "红方" : "黑方"}</span>
-                  {setupPieces[side].map((name) => {
-                    const active =
-                      typeof setupBrush === "object" &&
-                      setupBrush.side === side &&
-                      setupBrush.name === name;
-                    return (
-                      <button
-                        key={name}
-                        className={active ? "active" : ""}
-                        onClick={() => setSetupBrush({ side, name })}
-                      >
-                        {name}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-              {setupMessage && <p>{setupMessage}</p>}
-            </div>
-          )}
           <div className="board-hint">
             <span>●</span>
             {gameMode === "setup"
@@ -2244,43 +2129,9 @@ export default function Home() {
                           ? `皮卡鱼思考中，仍可继续行棋；落子后自动改算${turn === "red" ? "黑" : "红"}方应着`
                           : `${turn === "red" ? "红" : "黑"}方走棋 · 点击棋子开始`}
           </div>
-          <Collapsible title="对弈模式"><section className="game-mode-card panel" aria-label="对局模式">
-            <div className="game-mode-bar">
-              {(["local", "computer", "setup"] as GameMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  className={gameMode === mode ? "active" : ""}
-                  onClick={() => changeGameMode(mode)}
-                >
-                  {mode === "local"
-                    ? "双人对弈"
-                    : mode === "computer"
-                      ? "人机对战"
-                      : "摆盘"}
-                </button>
-              ))}
-            </div>
-            {gameMode === "computer" && (
-              <div className="computer-options">
-                <button
-                  className="side-choice"
-                  onClick={() => {
-                    setHumanSide((side) => (side === "red" ? "black" : "red"));
-                    aiPositionRef.current = "";
-                  }}
-                >
-                  我执{humanSide === "red" ? "红" : "黑"}
-                </button>
-                <label className="level-choice"><span>电脑等级</span>
-                  <select value={computerElo} onChange={(event) => { setComputerElo(Number(event.target.value)); aiPositionRef.current = ""; }}>
-                    {[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name, elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}
-                  </select>
-                </label>
-              </div>
-            )}
-          </section></Collapsible>
         </div>
 
+        <div className="coach-sidebar">
         <Collapsible title="教练分析" open><aside className="right-panel panel">
           <div className="panel-title">
             <span>01</span>
@@ -2419,7 +2270,6 @@ export default function Home() {
             <p>请结合对手下一步最强回应，再决定后续计划。</p>
           </div>
         </aside></Collapsible>
-      </section>
 
       <Collapsible title="局势图"><SituationChart
         points={evaluationPoints}
@@ -2432,24 +2282,44 @@ export default function Home() {
         startingPieces={startingPieces}
       /></Collapsible>
 
-      <Collapsible title="分析深度"><section className="depth-card panel">
-        <div>
-          <strong>分析深度</strong>
-          <small>按设备性能选择；修改后从当前局面重新计算</small>
-        </div>
-        <div className="depth-options">
-          {DEPTH_OPTIONS.map((depth) => (
-            <button
-              key={depth}
-              className={depth === analysisDepth ? "active" : ""}
-              onClick={() => changeDepth(depth)}
-              aria-pressed={depth === analysisDepth}
-            >
-              {depth}
+      <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
+        <div className="game-mode-bar">
+          {(["local", "computer", "setup"] as GameMode[]).map((mode) => (
+            <button key={mode} className={gameMode === mode ? "active" : ""} onClick={() => changeGameMode(mode)}>
+              {mode === "local" ? "双人对弈" : mode === "computer" ? "人机对战" : "摆盘"}
             </button>
           ))}
         </div>
+        {gameMode === "computer" && <div className="computer-options">
+          <button className="side-choice" onClick={() => { setHumanSide((side) => side === "red" ? "black" : "red"); aiPositionRef.current = ""; }}>我执{humanSide === "red" ? "红" : "黑"}</button>
+          <label className="level-choice"><span>电脑等级</span><select value={computerElo} onChange={(event) => { setComputerElo(Number(event.target.value)); aiPositionRef.current = ""; }}>{[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name, elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}</select></label>
+        </div>}
+        <div className="depth-setting">
+          <div><strong>分析深度</strong><small>修改后从当前局面重新计算</small></div>
+          <div className="depth-options">{DEPTH_OPTIONS.map((depth) => <button key={depth} className={depth === analysisDepth ? "active" : ""} onClick={() => changeDepth(depth)} aria-pressed={depth === analysisDepth}>{depth}</button>)}</div>
+        </div>
+        {gameMode === "setup" && <div className="setup-panel">
+          <div className="setup-actions"><button className={setupBrush === "move" ? "active" : ""} onClick={() => setSetupBrush("move")}>移动</button><button className={setupBrush === "erase" ? "active" : ""} onClick={() => setSetupBrush("erase")}>删除</button><button onClick={() => setTurn((side) => side === "red" ? "black" : "red")}>{turn === "red" ? "红方先行" : "黑方先行"}</button><button className="finish" onClick={finishSetup}>完成摆盘</button></div>
+          {(["red", "black"] as Side[]).map((side) => <div className={`setup-pieces ${side}`} key={side}><span>{side === "red" ? "红方" : "黑方"}</span>{setupPieces[side].map((name) => { const active=typeof setupBrush === "object" && setupBrush.side === side && setupBrush.name === name; return <button key={name} className={active ? "active" : ""} onClick={() => setSetupBrush({side,name})}>{name}</button>; })}</div>)}
+          {setupMessage && <p>{setupMessage}</p>}
+        </div>}
       </section></Collapsible>
+
+      <Collapsible title="棋谱与存档"><section className="record-toolbar panel" aria-label="棋谱与存档">
+        <div className="record-summary"><span aria-hidden="true">谱</span><div><small>当前棋局</small><strong>{recordTitle}</strong></div><em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em></div>
+        <div className="record-stepper" aria-label="棋谱步进">
+          <button onClick={() => goToPly(0)} disabled={activePly === 0} title="回到开始"><i>⇤</i><span>开始</span></button><button onClick={() => goToPly(activePly - 1)} disabled={activePly === 0} title="上一步"><i>‹</i><span>上一步</span></button><button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length} title="下一步"><span>下一步</span><i>›</i></button><button onClick={() => goToPly(history.length)} disabled={activePly === history.length} title="前往末尾"><span>末尾</span><i>⇥</i></button>
+        </div>
+        <div className="record-actions"><button className="load-record" onClick={() => { refreshSavedGames(); setShowRecordPanel((value) => !value); }}><i>↥</i> 载入棋谱</button><button className="save-record" onClick={saveGame}><i>⌑</i> 保存棋局</button></div>
+        <input ref={recordFileRef} type="file" hidden accept=".xqf,.fen,.json,text/plain,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecordFile(file); }} />
+        {showRecordPanel && <section className="record-loader panel">
+          <div className="loader-heading"><div><strong>载入棋谱或局面</strong><small>文件只在本机浏览器中读取，不会上传</small></div><button onClick={() => setShowRecordPanel(false)} aria-label="关闭载入面板">×</button></div>
+          <div className="loader-grid"><button className="file-load" onClick={() => recordFileRef.current?.click()}><b>选择本地文件</b><span>XQF 1.0 · FEN · 弈思 JSON 存档</span></button><div className="fen-load"><label htmlFor="fen-input">粘贴 FEN 局面</label><textarea id="fen-input" value={fenInput} onChange={(event) => setFenInput(event.target.value)} placeholder="例如：rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w" /><button onClick={importFenText} disabled={!fenInput.trim()}>载入此局面</button></div></div>
+          <div className="saved-games"><strong>本机存档</strong>{savedGames.length ? savedGames.map((saved) => <button key={saved.id} onClick={() => loadSavedGame(saved.id)}><span>{saved.title}</span><small>{new Date(saved.savedAt).toLocaleString("zh-CN")}</small></button>) : <em>还没有保存的棋局</em>}</div>
+        </section>}
+      </section></Collapsible>
+        </div>
+      </section>
 
       <footer>
         <div>

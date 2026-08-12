@@ -51,6 +51,7 @@
 		C002E51A801D41546273E49A /* uci.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 514C5BEA88B076530B55BDE2 /* uci.cpp */; };
 		137AF2DED93E4EDC45BF4989 /* ucioption.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 39E3381B0441CAE2D626FAA7 /* ucioption.cpp */; };
 		2AA1EC5B3154FCAC2D91AFB5 /* AppIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = D3A9120341B20E5418773811 /* AppIcon.png */; };
+		A93408E6930566449BF87748 /* AppIconDark.png in Resources */ = {isa = PBXBuildFile; fileRef = 3C75091F7640E5D2B10E4216 /* AppIconDark.png */; };
 		3D234ADC3FCACE4935C47F40 /* pikafish.nnue in Resources */ = {isa = PBXBuildFile; fileRef = 4A965416918068E2EA465D78 /* pikafish.nnue */; };
 		4134C72EF01F92F012DF729B /* COPYING.txt in Resources */ = {isa = PBXBuildFile; fileRef = 34497955DC4CB4AF0E072134 /* COPYING.txt */; };
 /* End PBXBuildFile section */
@@ -101,6 +102,7 @@
 		514C5BEA88B076530B55BDE2 /* uci.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ThirdParty/Pikafish/src/uci.cpp; sourceTree = "<group>"; };
 		39E3381B0441CAE2D626FAA7 /* ucioption.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ThirdParty/Pikafish/src/ucioption.cpp; sourceTree = "<group>"; };
 		D3A9120341B20E5418773811 /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = App/Resources/AppIcon.png; sourceTree = "<group>"; };
+		3C75091F7640E5D2B10E4216 /* AppIconDark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = App/Resources/AppIconDark.png; sourceTree = "<group>"; };
 		4A965416918068E2EA465D78 /* pikafish.nnue */ = {isa = PBXFileReference; lastKnownFileType = file; path = App/Resources/pikafish.nnue; sourceTree = "<group>"; };
 		34497955DC4CB4AF0E072134 /* COPYING.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdParty/Pikafish/COPYING.txt; sourceTree = "<group>"; };
 		E090EADBFB50D7D38C4AD264 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = App/Info.plist; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 				D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */,
 				5BC68CB647237D96AA108941 /* YisiXiangqiCoachApp.swift */,
 				D3A9120341B20E5418773811 /* AppIcon.png */,
+				3C75091F7640E5D2B10E4216 /* AppIconDark.png */,
 				4A965416918068E2EA465D78 /* pikafish.nnue */,
 				E090EADBFB50D7D38C4AD264 /* Info.plist */,
 			);
@@ -237,6 +240,7 @@
 /* Begin PBXResourcesBuildPhase section */
 		86F6FE2DD6E869C1842A14B3 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
 			2AA1EC5B3154FCAC2D91AFB5 /* AppIcon.png in Resources */,
+			A93408E6930566449BF87748 /* AppIconDark.png in Resources */,
 			3D234ADC3FCACE4935C47F40 /* pikafish.nnue in Resources */,
 			4134C72EF01F92F012DF729B /* COPYING.txt in Resources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
