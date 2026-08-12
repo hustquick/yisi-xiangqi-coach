@@ -1,4 +1,5 @@
 #include <emscripten/emscripten.h>
+#include <algorithm>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -46,11 +47,13 @@ EMSCRIPTEN_KEEPALIVE const char* pikafish_init() {
     return result.c_str();
 }
 
-EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen, int depth, int multipv) {
+EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen, int depth, int multipv, int elo) {
     pikafish_init();
     result = "[";
     bool first = true;
     option("MultiPV", std::to_string(multipv));
+    option("UCI_LimitStrength", elo ? "true" : "false");
+    if (elo) option("UCI_Elo", std::to_string(std::clamp(elo, Search::Skill::LowestElo, Search::Skill::HighestElo)));
     if (auto error = engine->set_position(fen, {})) {
         result = "[{\"error\":\"invalid fen\"}]";
         return result.c_str();
@@ -64,12 +67,23 @@ EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen, int depth, in
           + ",\"score\":\"" + esc(UCIEngine::format_score(info.score))
           + "\",\"pv\":\"" + esc(info.pv) + "\"}";
     });
-    engine->set_on_bestmove([](std::string_view, std::string_view) {});
+    std::string bestmove;
+    engine->set_on_bestmove([&](std::string_view move, std::string_view) { bestmove = move; });
     Search::LimitsType limits;
     limits.depth = depth;
     limits.startTime = now();
     engine->go(limits);
     engine->wait_for_search_finished();
+    if (elo && !bestmove.empty()) {
+        const std::string marker = "\"pv\":\"";
+        const auto start = result.find(marker);
+        if (start != std::string::npos) {
+            const auto moveStart = start + marker.size();
+            const auto moveEnd = result.find_first_of(" \\\"", moveStart);
+            if (moveEnd != std::string::npos) result.replace(moveStart, moveEnd - moveStart, bestmove);
+        }
+    }
+    option("UCI_LimitStrength", "false");
     result += "]";
     return result.c_str();
 }

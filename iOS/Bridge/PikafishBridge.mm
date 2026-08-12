@@ -90,6 +90,11 @@ struct AnalysisLine {
     usize       nps = 0;
 };
 
+struct AnalysisState {
+    std::mutex                    mutex;
+    std::map<usize, AnalysisLine> lines;
+};
+
 }  // namespace
 
 extern "C" const char *pf_initialize(const char *eval_file, int threads, int hash_mb) {
@@ -121,6 +126,7 @@ extern "C" const char *pf_analyze(const char *fen,
 
         const int safeDepth = std::clamp(depth, 1, 30);
         const int safeMultiPV = std::clamp(multipv, 1, 32);
+        setOption("UCI_LimitStrength", "false");
         setOption("MultiPV", std::to_string(safeMultiPV));
 
         if (auto error = gEngine->set_position(fen ? fen : "", {}))
@@ -129,11 +135,14 @@ extern "C" const char *pf_analyze(const char *fen,
             return gResult.c_str();
         }
 
-        std::map<usize, AnalysisLine> lines;
-        std::mutex                    linesMutex;
-        gEngine->set_on_update_full([&](const Engine::InfoFull& info) {
-            std::lock_guard<std::mutex> callbackLock(linesMutex);
-            auto& line = lines[info.multiPV];
+        // Search callbacks are retained by Engine and are also used by the
+        // following search. Never capture stack-owned state here: switching
+        // from analysis to Elo play would otherwise leave a dangling mutex and
+        // abort as soon as the next search emitted an info line.
+        auto analysisState = std::make_shared<AnalysisState>();
+        gEngine->set_on_update_full([analysisState](const Engine::InfoFull& info) {
+            std::lock_guard<std::mutex> callbackLock(analysisState->mutex);
+            auto& line = analysisState->lines[info.multiPV];
             if (info.depth < line.depth)
                 return;
             line.depth = info.depth;
@@ -155,7 +164,8 @@ extern "C" const char *pf_analyze(const char *fen,
         std::ostringstream json;
         json << "{\"lines\":[";
         bool first = true;
-        for (const auto& [rank, line] : lines)
+        std::lock_guard<std::mutex> stateLock(analysisState->mutex);
+        for (const auto& [rank, line] : analysisState->lines)
         {
             if (line.pv.empty())
                 continue;
@@ -169,10 +179,57 @@ extern "C" const char *pf_analyze(const char *fen,
         }
         json << "],\"error\":null}";
         gResult = json.str();
+        gEngine->set_on_update_full([](const Engine::InfoFull&) {});
     }
     catch (const std::exception& error)
     {
         gResult = "{\"lines\":[],\"error\":\"" + escapeJSON(error.what()) + "\"}";
+    }
+    return gResult.c_str();
+}
+
+extern "C" const char *pf_best_move(const char *fen, int depth, int elo) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    try
+    {
+        if (!gEngine)
+        {
+            gResult = "error:engine not initialized";
+            return gResult.c_str();
+        }
+
+        // A best-move search does not consume full analysis callbacks. Clear
+        // any callback retained by a preceding coach analysis before starting.
+        gEngine->set_on_update_full([](const Engine::InfoFull&) {});
+        setOption("UCI_LimitStrength", "true");
+        setOption("UCI_Elo", std::to_string(std::clamp(elo, Search::Skill::LowestElo,
+                                                       Search::Skill::HighestElo)));
+        setOption("MultiPV", "1");
+        if (auto error = gEngine->set_position(fen ? fen : "", {}))
+        {
+            setOption("UCI_LimitStrength", "false");
+            gResult = "error:invalid FEN";
+            return gResult.c_str();
+        }
+
+        auto bestMove = std::make_shared<std::string>();
+        gEngine->set_on_bestmove([bestMove](std::string_view move, std::string_view) {
+            *bestMove = std::string(move);
+        });
+        Search::LimitsType limits;
+        limits.depth = std::clamp(depth, 1, 30);
+        limits.startTime = now();
+        gEngine->go(limits);
+        gEngine->wait_for_search_finished();
+        setOption("UCI_LimitStrength", "false");
+        gEngine->set_on_bestmove([](std::string_view, std::string_view) {});
+        gResult = bestMove->empty() ? "error:no legal move" : *bestMove;
+    }
+    catch (const std::exception& error)
+    {
+        if (gEngine)
+            setOption("UCI_LimitStrength", "false");
+        gResult = "error:" + std::string(error.what());
     }
     return gResult.c_str();
 }

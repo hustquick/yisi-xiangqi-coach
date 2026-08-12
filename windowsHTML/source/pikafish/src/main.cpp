@@ -86,11 +86,17 @@ EMSCRIPTEN_KEEPALIVE const char* pikafish_init() {
 EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen,
                                                   int         depth,
                                                   int         multipv,
-                                                  const char* searchMoves) {
+                                                  const char* searchMoves,
+                                                  int         elo) {
     pikafish_init();
     depth   = std::clamp(depth, 1, 30);
     multipv = std::clamp(multipv, 1, 64);
     option("MultiPV", std::to_string(multipv));
+    option("UCI_LimitStrength", elo ? "true" : "false");
+    if (elo)
+        option("UCI_Elo",
+               std::to_string(std::clamp(elo, Search::Skill::LowestElo,
+                                         Search::Skill::HighestElo)));
 
     if (!fen || engine->set_position(fen, {}))
     {
@@ -99,6 +105,9 @@ EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen,
     }
 
     std::map<usize, Line> lines;
+    std::string bestmove;
+    engine->set_on_bestmove(
+      [&](std::string_view move, std::string_view) { bestmove = move; });
     engine->set_on_update_full([&](const Engine::InfoFull& info) {
         if (info.multiPV == 0 || info.multiPV > static_cast<usize>(multipv))
             return;
@@ -116,6 +125,15 @@ EMSCRIPTEN_KEEPALIVE const char* pikafish_analyze(const char* fen,
     limits.searchmoves = split_moves(searchMoves);
     engine->go(limits);
     engine->wait_for_search_finished();
+
+    if (const auto firstLine = lines.find(1);
+        elo && !bestmove.empty() && firstLine != lines.end())
+    {
+        auto& pv = firstLine->second.pv;
+        const auto separator = pv.find(' ');
+        pv = bestmove + (separator == std::string::npos ? "" : pv.substr(separator));
+    }
+    option("UCI_LimitStrength", "false");
 
     result = "[";
     bool first = true;

@@ -209,6 +209,33 @@ struct InfoShort {
     Score score;
 };
 
+// Implements UCI strength limiting. The Elo scale is deliberately the same
+// reference range used by Stockfish so clients can expose one consistent set
+// of levels for Chess and Xiangqi. It is an engine-relative reference value,
+// not an official cross-game rating conversion.
+struct Skill {
+    constexpr static int LowestElo  = 1320;
+    constexpr static int HighestElo = 3190;
+
+    Skill(int skill_level, int uci_elo) {
+        if (uci_elo)
+        {
+            const double e = double(uci_elo - LowestElo) / (HighestElo - LowestElo);
+            level = std::clamp(
+              (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438), 0.0, 19.0);
+        }
+        else
+            level = double(skill_level);
+    }
+
+    bool enabled() const { return level < 20.0; }
+    bool time_to_pick(Depth depth) const { return depth == 1 + int(level); }
+    Move pick_best(const RootMoves&, usize multiPV);
+
+    double level;
+    Move   best = Move::none();
+};
+
 struct InfoFull: InfoShort {
     int              selDepth;
     usize            multiPV;

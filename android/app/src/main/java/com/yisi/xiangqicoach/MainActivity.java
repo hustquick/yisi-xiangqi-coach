@@ -64,9 +64,11 @@ public final class MainActivity extends Activity implements CoachController.List
     private TextView recordTitleView;
     private LinearLayout setupPanel;
     private TextView humanSideButton;
+    private TextView computerLevelButton;
     private final Map<GameMode, TextView> modeButtons = new HashMap<>();
     private final Map<Integer, TextView> depthButtons = new HashMap<>();
     private final Handler tapHandler = new Handler(Looper.getMainLooper());
+    private String announcedOutcome;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -283,6 +285,11 @@ public final class MainActivity extends Activity implements CoachController.List
         humanSideButton.setOnClickListener(view -> controller.setHumanSide(controller.humanSide == Side.RED ? Side.BLACK : Side.RED));
         LinearLayout.LayoutParams sideParams = new LinearLayout.LayoutParams(dp(54), dp(38)); sideParams.setMarginStart(dp(5));
         row.addView(humanSideButton, sideParams);
+        computerLevelButton = label("业余九级", 11, GREEN, Typeface.BOLD);
+        computerLevelButton.setGravity(Gravity.CENTER);
+        computerLevelButton.setOnClickListener(view -> controller.cycleComputerLevel());
+        LinearLayout.LayoutParams levelParams = new LinearLayout.LayoutParams(dp(86), dp(38)); levelParams.setMarginStart(dp(5));
+        row.addView(computerLevelButton, levelParams);
         return row;
     }
 
@@ -443,6 +450,9 @@ public final class MainActivity extends Activity implements CoachController.List
         }
         humanSideButton.setVisibility(controller.gameMode == GameMode.COMPUTER ? View.VISIBLE : View.GONE);
         humanSideButton.setText(controller.humanSide == Side.RED ? "执红" : "执黑");
+        computerLevelButton.setVisibility(controller.gameMode == GameMode.COMPUTER ? View.VISIBLE : View.GONE);
+        computerLevelButton.setText(CoachController.COMPUTER_LEVELS[controller.computerLevelIndex]);
+        computerLevelButton.setContentDescription(controller.computerLevelLabel());
         setupPanel.setVisibility(controller.gameMode == GameMode.SETUP ? View.VISIBLE : View.GONE);
 
         for (Map.Entry<Integer, TextView> entry : depthButtons.entrySet()) {
@@ -507,6 +517,17 @@ public final class MainActivity extends Activity implements CoachController.List
         roundCount.setText(String.valueOf(controller.completedRounds()));
         qualityText.setText(controller.activePly == 0 ? "—" : controller.review().grade);
         renderHistory();
+        String[] outcome = controller.gameOutcome();
+        if (outcome == null) announcedOutcome = null;
+        else {
+            String key = outcome[0] + outcome[1];
+            if (!key.equals(announcedOutcome)) {
+                announcedOutcome = key;
+                new AlertDialog.Builder(this).setTitle(outcome[0]).setMessage(outcome[1])
+                        .setPositiveButton("再来一局", (dialog, which) -> controller.reset())
+                        .setNegativeButton("查看棋局", null).show();
+            }
+        }
     }
 
     private void renderCandidates(List<EngineLine> lines, boolean selectedScope) {

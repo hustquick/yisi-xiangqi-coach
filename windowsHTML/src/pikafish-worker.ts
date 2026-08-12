@@ -55,7 +55,7 @@ export function createPikafishWorker(): Worker {
           analyze = module.cwrap(
             "pikafish_analyze",
             "string",
-            ["string", "number", "number", "string"]
+            ["string", "number", "number", "string", "number"]
           );
           self.postMessage({
             type: "ready",
@@ -85,7 +85,8 @@ export function createPikafishWorker(): Worker {
           data.fen,
           data.depth ?? 12,
           data.multiPV ?? 5,
-          (data.searchMoves ?? []).join(" ")
+          (data.searchMoves ?? []).join(" "),
+          data.elo ?? 0
         );
         if (current !== sequence) return;
         const lines = JSON.parse(raw);

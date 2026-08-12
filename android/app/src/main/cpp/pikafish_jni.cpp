@@ -97,6 +97,7 @@ std::string analyzePosition(const std::string& fen, int depth, int multipv,
         if (!gEngine) return "{\"lines\":[],\"error\":\"engine not initialized\"}";
         int safeDepth = std::clamp(depth, 1, 30);
         int safeMultipv = std::clamp(multipv, 1, 32);
+        setOption("UCI_LimitStrength", "false");
         setOption("MultiPV", std::to_string(safeMultipv));
         if (gEngine->set_position(fen, {}))
             return "{\"lines\":[],\"error\":\"invalid FEN\"}";
@@ -142,6 +143,36 @@ std::string analyzePosition(const std::string& fen, int depth, int multipv,
         return json.str();
     } catch (const std::exception& error) {
         return "{\"lines\":[],\"error\":\"" + escapeJson(error.what()) + "\"}";
+    }
+}
+
+std::string bestMoveFor(const std::string& fen, int depth, int elo) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    try {
+        if (!gEngine) return "error:engine not initialized";
+        setOption("UCI_LimitStrength", "true");
+        setOption("UCI_Elo", std::to_string(std::clamp(elo, Search::Skill::LowestElo,
+                                                       Search::Skill::HighestElo)));
+        setOption("MultiPV", "1");
+        if (gEngine->set_position(fen, {})) {
+            setOption("UCI_LimitStrength", "false");
+            return "error:invalid FEN";
+        }
+        auto bestMove = std::make_shared<std::string>();
+        gEngine->set_on_bestmove([bestMove](std::string_view move, std::string_view) {
+            *bestMove = std::string(move);
+        });
+        Search::LimitsType limits;
+        limits.depth = std::clamp(depth, 1, 30);
+        limits.startTime = now();
+        gEngine->go(limits);
+        gEngine->wait_for_search_finished();
+        setOption("UCI_LimitStrength", "false");
+        gEngine->set_on_bestmove([](std::string_view, std::string_view) {});
+        return bestMove->empty() ? "error:no legal move" : *bestMove;
+    } catch (const std::exception& error) {
+        if (gEngine) setOption("UCI_LimitStrength", "false");
+        return "error:" + std::string(error.what());
     }
 }
 
@@ -200,6 +231,12 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_yisi_xiangqicoach_PikafishNative_analyze(
         JNIEnv* env, jclass, jstring fen, jint depth, jint multipv, jstring searchMoves) {
     return toJava(env, analyzePosition(fromJava(env, fen), depth, multipv, fromJava(env, searchMoves)));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_yisi_xiangqicoach_PikafishNative_bestMove(
+        JNIEnv* env, jclass, jstring fen, jint depth, jint elo) {
+    return toJava(env, bestMoveFor(fromJava(env, fen), depth, elo));
 }
 
 extern "C" JNIEXPORT jstring JNICALL

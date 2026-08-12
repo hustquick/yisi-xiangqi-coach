@@ -28,10 +28,13 @@ final class CoachViewModel: ObservableObject {
     @Published private(set) var timelinePreviewPly: Int?
     @Published private(set) var gameMode: GameMode = .local
     @Published private(set) var humanSide: XiangqiSide = .red
+    @Published private(set) var computerElo = 2100
     @Published private(set) var setupTool: SetupTool = .move
     @Published private(set) var setupMessage: String?
     @Published private(set) var recordTitle = "新对局"
     @Published private(set) var recordMessage: String?
+    @Published private(set) var gameOutcome: XiangqiRules.Outcome?
+    @Published var isShowingGameOutcome = false
     @Published private(set) var savedGames: [PortableGame] = GameRecordIO.savedGames()
 
     private let engine = PikafishService.shared
@@ -61,7 +64,7 @@ final class CoachViewModel: ObservableObject {
         return variationPreviewFrames[variationPreviewIndex]
     }
     var isPreviewingVariation: Bool { variationPreviewFrame != nil }
-    var canHumanMove: Bool { gameMode != .setup && (gameMode != .computer || sideToMove == humanSide) }
+    var canHumanMove: Bool { gameOutcome == nil && gameMode != .setup && (gameMode != .computer || sideToMove == humanSide) }
     var displayedPieces: [BoardPiece] {
         if let frame = variationPreviewFrame {
             guard let moving = frame.movingPiece else { return frame.pieces }
@@ -243,6 +246,8 @@ final class CoachViewModel: ObservableObject {
         setupMessage = nil
         gameMode = mode
         if mode == .setup {
+            gameOutcome = nil
+            isShowingGameOutcome = false
             history.removeAll()
             positionScores.removeAll()
             activePly = 0
@@ -252,14 +257,20 @@ final class CoachViewModel: ObservableObject {
             isAnalyzing = false
             setupTool = .move
         } else {
-            refreshAnalysis()
+            updateGameOutcome()
+            if gameOutcome == nil { refreshAnalysis() }
         }
     }
 
     func setHumanSide(_ side: XiangqiSide) {
         humanSide = side
         cancelComputerMove()
-        scheduleComputerMoveIfNeeded()
+        refreshAnalysis()
+    }
+
+    func setComputerElo(_ elo: Int) {
+        computerElo = min(max(elo, SearchElo.minimum), SearchElo.maximum)
+        if gameMode == .computer, sideToMove != humanSide { refreshAnalysis() }
     }
 
     func setSetupTool(_ tool: SetupTool) {
@@ -462,6 +473,9 @@ final class CoachViewModel: ObservableObject {
         isApplyingMove = false
         legalMoves = []
 
+        updateGameOutcome()
+        if gameOutcome != nil { return }
+
         // Rules already made the move available synchronously. Start only the
         // new position's analysis; it no longer gates the next board action.
         refreshAnalysis()
@@ -491,7 +505,8 @@ final class CoachViewModel: ObservableObject {
         legalMoves = []
         globalLines = []
         clearSelection()
-        refreshAnalysis()
+        updateGameOutcome()
+        if gameOutcome == nil { refreshAnalysis() }
     }
 
     func reset() {
@@ -509,6 +524,8 @@ final class CoachViewModel: ObservableObject {
         timelineEndFEN = Self.initialFEN
         recordTitle = "新对局"
         recordMessage = nil
+        gameOutcome = nil
+        isShowingGameOutcome = false
         clearSelection()
         if gameMode == .setup {
             legalMoves = []
@@ -543,7 +560,8 @@ final class CoachViewModel: ObservableObject {
         activePly = min(max(requestedPly ?? records.count, 0), records.count)
         fen = activePly < records.count ? records[activePly].beforeFEN : current
         recordTitle = title; recordMessage = "已载入“\(title)”，共 \(records.count) 步；可从任意局面续走。"
-        gameMode = .local; legalMoves = []; globalLines = []; clearSelection(); refreshAnalysis()
+        gameMode = .local; legalMoves = []; globalLines = []; clearSelection(); updateGameOutcome()
+        if gameOutcome == nil { refreshAnalysis() }
     }
 
     func importFEN(_ text: String) {
@@ -691,7 +709,7 @@ final class CoachViewModel: ObservableObject {
     }
 
     private func refreshAnalysis() {
-        guard gameMode != .setup else { return }
+        guard gameMode != .setup, gameOutcome == nil else { return }
         positionAnalysisTask?.cancel()
         let fenAtStart = fen
         let depthAtStart = analysisDepth
@@ -714,6 +732,21 @@ final class CoachViewModel: ObservableObject {
                       fen == fenAtStart,
                       analysisDepth == depthAtStart
                 else { return }
+
+                if gameMode == .computer, sideToMove != humanSide {
+                    let move = try await engine.bestMove(
+                        fen: fenAtStart, depth: depthAtStart, elo: computerElo
+                    )
+                    guard !Task.isCancelled,
+                          positionGeneration == generation,
+                          fen == fenAtStart,
+                          sideToMove != humanSide,
+                          XiangqiRules.legalMoves(for: sideToMove, pieces: pieces).contains(move)
+                    else { return }
+                    isAnalyzing = false
+                    play(move)
+                    return
+                }
                 let previewDepth = min(7, depthAtStart)
                 var lines = try await engine.analyze(fen: fenAtStart, depth: previewDepth, multiPV: 5)
                 guard positionGeneration == generation,
@@ -734,7 +767,6 @@ final class CoachViewModel: ObservableObject {
                     positionScores[activePly] = sideToMove == .red ? score : -score
                 }
                 isAnalyzing = false
-                scheduleComputerMoveIfNeeded()
                 if let selectedSquare,
                    !isAnalyzingSelection,
                    selectedLines.isEmpty,
@@ -755,7 +787,7 @@ final class CoachViewModel: ObservableObject {
 
     private func scheduleScoreBackfill() {
         scoreBackfillTask?.cancel()
-        guard gameMode != .setup else { return }
+        guard gameMode != .setup, gameOutcome == nil else { return }
         let missing = (0...history.count).filter { positionScores[$0] == nil && $0 != activePly }
         guard !missing.isEmpty else { return }
         let snapshots = missing.map { ply -> (Int, String, XiangqiSide) in
@@ -777,6 +809,24 @@ final class CoachViewModel: ObservableObject {
                     if Task.isCancelled { return }
                 }
             }
+        }
+    }
+
+    private func updateGameOutcome() {
+        let nextOutcome = gameMode == .setup ? nil : XiangqiRules.outcome(for: sideToMove, pieces: pieces)
+        if nextOutcome != gameOutcome {
+            gameOutcome = nextOutcome
+            isShowingGameOutcome = nextOutcome != nil
+        }
+        if gameOutcome != nil {
+            cancelComputerMove()
+            positionAnalysisTask?.cancel()
+            selectionAnalysisTask?.cancel()
+            engine.interruptForBoardAction()
+            isAnalyzing = false
+            isAnalyzingSelection = false
+            globalLines = []
+            selectedLines = []
         }
     }
 
@@ -807,19 +857,6 @@ final class CoachViewModel: ObservableObject {
     func toggleSetupSideToMove() {
         fen = Self.makeFEN(pieces: pieces, side: sideToMove.opposite)
         timelineEndFEN = fen
-    }
-
-    private func scheduleComputerMoveIfNeeded() {
-        guard gameMode == .computer, sideToMove != humanSide, !isAnalyzing,
-              !isApplyingMove, let move = globalBestMove else { return }
-        let expectedFEN = fen
-        computerMoveTask?.cancel()
-        computerMoveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 520_000_000)
-            guard let self, !Task.isCancelled, self.gameMode == .computer,
-                  self.fen == expectedFEN, self.sideToMove != self.humanSide else { return }
-            self.play(move)
-        }
     }
 
     private func cancelComputerMove() {

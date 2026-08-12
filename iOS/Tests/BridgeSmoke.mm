@@ -38,6 +38,13 @@ int main(int argc, char **argv) {
     require(analysis.find("\"depth\":4") != std::string::npos, "analysis must reach requested depth");
     require(analysis.find("\"score\":\"") != std::string::npos, "analysis must contain scores");
 
-    std::cout << "PASS: legal moves, move application, and local NNUE analysis are working.\n";
+    // Regression: Engine retains its update callback between searches. This
+    // sequence used to call pf_analyze's destroyed stack state and abort when
+    // selecting the lowest Elo level on iOS.
+    const std::string amateurMove = pf_best_move(InitialFEN, 4, 1320);
+    require(amateurMove.size() >= 4 && amateurMove.rfind("error:", 0) != 0,
+            "Elo 1320 best move must complete after coach analysis");
+
+    std::cout << "PASS: legal moves, analysis, and Elo 1320 best move are working.\n";
     return 0;
 }

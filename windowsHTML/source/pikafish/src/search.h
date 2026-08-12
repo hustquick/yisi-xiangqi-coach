@@ -151,6 +151,30 @@ struct RootMove {
 
 using RootMoves = std::vector<RootMove>;
 
+// UCI strength limiting uses the same reference range exposed by the native
+// iOS, Android, and local HTML engines.
+struct Skill {
+    constexpr static int LowestElo  = 1320;
+    constexpr static int HighestElo = 3190;
+
+    Skill(int skill_level, int uci_elo) {
+        if (uci_elo)
+        {
+            const double e = double(uci_elo - LowestElo) / (HighestElo - LowestElo);
+            level = std::clamp(
+              (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438), 0.0, 19.0);
+        }
+        else
+            level = double(skill_level);
+    }
+
+    bool enabled() const { return level < 20.0; }
+    bool time_to_pick(Depth depth) const { return depth == 1 + int(level); }
+    Move pick_best(const RootMoves&, usize multiPV);
+
+    double level;
+    Move   best = Move::none();
+};
 
 // LimitsType struct stores information sent by the caller about the analysis required.
 struct LimitsType {

@@ -13,7 +13,7 @@ const requestedThreads = Number(process.env.PIKAFISH_THREADS);
 const threadCount = Number.isFinite(requestedThreads)
   ? Math.max(1, Math.min(logicalCores, Math.trunc(requestedThreads)))
   : Math.max(1, Math.min(4, logicalCores > 2 ? logicalCores - 1 : logicalCores));
-const port = Number(process.env.PIKAFISH_PORT ?? 8788);
+const port = Number(process.env.PIKAFISH_PORT ?? 8789);
 const engine = spawn(enginePath, [], { cwd: join(root, ".local", "pikafish"), stdio: ["pipe", "pipe", "inherit"] });
 const lines = createInterface({ input: engine.stdout });
 let pending = null;
@@ -23,7 +23,7 @@ let requestedGeneration = 0;
 lines.on("line", line => {
   if (!pending) return;
   if (line.startsWith("info depth ") && line.includes(" multipv ") && line.includes(" pv ")) pending.info(line);
-  if (line.startsWith("bestmove ")) { const done = pending.done; pending = null; done(); }
+  if (line.startsWith("bestmove ")) { const done = pending.done; pending = null; done(line.split(/\s+/)[1]); }
 });
 
 function command(text) { engine.stdin.write(`${text}\n`); }
@@ -40,13 +40,23 @@ function parseInfo(line) {
   return { depth, multipv, score, pv };
 }
 
-function analyze({ fen, depth = 12, multiPV = 5, searchMoves = [] }) {
+function analyze({ fen, depth = 12, multiPV = 5, searchMoves = [], elo = 0 }) {
   return new Promise(resolve => {
     const latest = new Map();
     pending = {
       info(line) { const parsed = parseInfo(line); latest.set(parsed.multipv, parsed); },
-      done() { resolve([...latest.values()].sort((a, b) => a.multipv - b.multipv)); },
+      done(bestmove) {
+        const result = [...latest.values()].sort((a, b) => a.multipv - b.multipv);
+        if (elo && result[0] && bestmove) {
+          const continuation = result[0].pv.split(/\s+/).slice(1).join(" ");
+          result[0].pv = `${bestmove}${continuation ? ` ${continuation}` : ""}`;
+        }
+        resolve(result);
+      },
     };
+    const limitedElo = Math.max(1320, Math.min(3190, Number(elo) || 0));
+    command(`setoption name UCI_LimitStrength value ${elo ? "true" : "false"}`);
+    if (elo) command(`setoption name UCI_Elo value ${limitedElo}`);
     command(`setoption name MultiPV value ${Math.max(1, Math.min(64, multiPV))}`);
     command(`position fen ${fen}`);
     const restricted = Array.isArray(searchMoves) && searchMoves.length ? ` searchmoves ${searchMoves.join(" ")}` : "";

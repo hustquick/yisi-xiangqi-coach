@@ -13,6 +13,9 @@ const char *pf_initialize(const char *eval_file, int threads, int hash_mb);
 /// search_moves is an optional space-separated list of UCI moves.
 const char *pf_analyze(const char *fen, int depth, int multipv, const char *search_moves);
 
+/// Returns a limited-strength best move using the engine's UCI_Elo option.
+const char *pf_best_move(const char *fen, int depth, int elo);
+
 /// Returns every legal move as a space-separated UCI string.
 const char *pf_legal_moves(const char *fen);
 

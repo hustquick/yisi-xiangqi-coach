@@ -2,6 +2,8 @@
 
 这是原生 Android 版本，不是 WebView。界面使用 Android 原生 View/Canvas；官方 Pikafish C++ 通过 JNI 编译进 APK，`pikafish.nnue` 随应用打包，因此合法着法、候选分析和评分均可完全离线运行。
 
+人机模式提供十档参考 Elo，并通过 JNI 调用皮卡鱼真实的 UCI 限强搜索；等级名称不是天天象棋官方换算。
+
 ## 功能
 
 - 原生中国象棋棋盘，含黑方 `1–9`、红方 `九–一` 路数标记

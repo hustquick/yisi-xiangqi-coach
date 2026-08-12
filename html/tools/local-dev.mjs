@@ -14,6 +14,18 @@ const children = [
   spawn(process.execPath, [join(root, "tools", "pikafish-server.mjs")], { cwd: root, stdio: "inherit" }),
   spawn("npm", ["run", "dev"], { cwd: root, stdio: "inherit" }),
 ];
-function stop() { for (const child of children) child.kill("SIGTERM"); }
+let stopping = false;
+function stop() {
+  if (stopping) return;
+  stopping = true;
+  for (const child of children) if (child.exitCode == null) child.kill("SIGTERM");
+}
 process.on("SIGINT", stop); process.on("SIGTERM", stop);
-await Promise.all(children.map(child => new Promise(resolve => child.on("exit", resolve))));
+const exits = children.map(child => new Promise(resolve => child.on("exit", (code, signal) => resolve({ child, code, signal }))));
+const firstExit = await Promise.race(exits);
+if (!stopping && firstExit.code !== 0) {
+  console.error(`Local service exited unexpectedly (${firstExit.code ?? firstExit.signal}).`);
+  process.exitCode = firstExit.code ?? 1;
+}
+stop();
+await Promise.all(exits);

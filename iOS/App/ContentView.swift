@@ -51,6 +51,10 @@ struct ContentView: View {
         .alert("棋谱", isPresented: Binding(get: { viewModel.recordMessage != nil }, set: { if !$0 { viewModel.dismissRecordMessage() } })) {
             Button("好") { viewModel.dismissRecordMessage() }
         } message: { Text(viewModel.recordMessage ?? "") }
+        .alert(viewModel.gameOutcome?.title ?? "对局结束", isPresented: $viewModel.isShowingGameOutcome) {
+            Button("再来一局") { viewModel.reset() }
+            Button("查看棋局", role: .cancel) {}
+        } message: { Text(viewModel.gameOutcome?.detail ?? "") }
     }
 
     private var phoneLayout: some View {
@@ -282,6 +286,13 @@ struct ContentView: View {
                         Text("黑方").tag(XiangqiSide.black)
                     }
                     .pickerStyle(.segmented).frame(maxWidth: 220)
+                    Menu {
+                        ForEach(ComputerLevel.all) { level in
+                            Button("\(level.name) · Elo \(level.elo)") { viewModel.setComputerElo(level.elo) }
+                        }
+                    } label: {
+                        Text(ComputerLevel.all.first(where: { $0.elo == viewModel.computerElo })?.name ?? "电脑等级")
+                    }
                 }
             }
         }

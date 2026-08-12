@@ -12,7 +12,9 @@ Pikafish WebAssembly 来源与构建说明
 同时不会阻塞棋盘界面。
 
 对应源码（包括本版本修改）位于 source\pikafish。主要修改：
-- src/main.cpp：浏览器分析接口，支持 MultiPV 和 searchMoves 限定着法搜索；
+- src/main.cpp：浏览器分析接口，支持 MultiPV、searchMoves 限定着法搜索和 Elo 等级对战；
+- src/engine.cpp、src/search.cpp、src/search.h：支持 UCI_LimitStrength 和 UCI_Elo，
+  按参考 Elo 对引擎着法进行受限选择；
 - src/thread.cpp、src/thread_native.h、src/numa.h：Web Worker 内单线程执行；
 - src/Makefile：增加 SINGLE_THREADED_WASM 构建选项。
 

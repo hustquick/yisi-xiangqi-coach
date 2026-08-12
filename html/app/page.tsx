@@ -47,6 +47,7 @@ type EngineLine = {
   error?: string;
 };
 type EvaluationPoint = { ply: number; score: number | null };
+type GameOutcome = { title: string; detail: string };
 type VariationFrame = {
   pieces: Piece[];
   movingPiece?: Piece;
@@ -608,6 +609,17 @@ function isLegal(piece: Piece, x: number, y: number, pieces: Piece[]) {
   return !isInCheck(piece.side, next);
 }
 
+function xiangqiOutcome(pieces: Piece[], turn: Side): GameOutcome | null {
+  const redKing = pieces.some((piece) => piece.side === "red" && piece.name === "帅");
+  const blackKing = pieces.some((piece) => piece.side === "black" && piece.name === "将");
+  if (!redKing) return { title: "黑方获胜", detail: "红方的帅已被吃掉。" };
+  if (!blackKing) return { title: "红方获胜", detail: "黑方的将已被吃掉。" };
+  const hasLegalMove = pieces.some((piece) => piece.side === turn && legalUciMoves(piece, pieces).length > 0);
+  if (hasLegalMove) return null;
+  const winner = turn === "red" ? "黑方" : "红方";
+  return { title: `${winner}获胜`, detail: `${turn === "red" ? "红方" : "黑方"}已无合法着法，${winner}赢得本局。` };
+}
+
 function CandidateArrows({
   candidates,
   pieces,
@@ -1110,6 +1122,7 @@ export default function Home() {
   const [startingTurn, setStartingTurn] = useState<Side>("red");
   const [recordTitle, setRecordTitle] = useState("新对局");
   const [recordMessage, setRecordMessage] = useState("");
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [showRecordPanel, setShowRecordPanel] = useState(false);
   const [fenInput, setFenInput] = useState("");
   const [savedGames, setSavedGames] = useState<Array<{ id: string; title: string; savedAt: string }>>(() => {
@@ -1126,6 +1139,7 @@ export default function Home() {
   const [analysisDepth, setAnalysisDepth] = useState<number>(12);
   const [gameMode, setGameMode] = useState<GameMode>("local");
   const [humanSide, setHumanSide] = useState<Side>("red");
+  const [computerElo, setComputerElo] = useState(2100);
   const [setupBrush, setSetupBrush] = useState<SetupBrush>("move");
   const [setupMessage, setSetupMessage] = useState("");
   const [showBestArrows, setShowBestArrows] = useState(false);
@@ -1158,6 +1172,9 @@ export default function Home() {
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
   const selectedRequestRef = useRef(100000);
+  const outcome = gameMode === "setup" ? null : xiangqiOutcome(pieces, turn);
+  const outcomeTitle = outcome?.title;
+
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1372,7 +1389,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!workerRef.current || !engineConnected) return;
-    if (gameMode === "setup") {
+    if (gameMode === "setup" || outcomeTitle) {
       workerRef.current.postMessage({ type: "stop" });
       return;
     }
@@ -1391,7 +1408,8 @@ export default function Home() {
       id,
       fen: positionFen(pieces, turn, activePly),
       depth: analysisDepth,
-      multiPV: 5,
+      multiPV: gameMode === "computer" && turn !== humanSide ? 1 : 5,
+      elo: gameMode === "computer" && turn !== humanSide ? computerElo : 0,
     });
     timeoutRef.current = setTimeout(() => {
       if (id !== requestRef.current) return;
@@ -1399,7 +1417,7 @@ export default function Home() {
       workerRef.current?.postMessage({ type: "stop" });
       setEngineState("error");
     }, 45000);
-  }, [pieces, turn, activePly, analysisDepth, engineConnected, gameMode]);
+  }, [pieces, turn, activePly, analysisDepth, engineConnected, gameMode, humanSide, computerElo, outcomeTitle]);
 
   useEffect(() => {
     if (
@@ -1492,6 +1510,7 @@ export default function Home() {
   useEffect(() => {
     if (
       gameMode !== "computer" ||
+      outcomeTitle ||
       turn === humanSide ||
       engineState !== "ready" ||
       !candidates[0]
@@ -1514,7 +1533,7 @@ export default function Home() {
     return () => clearTimeout(timer);
     // playMove intentionally reads the position snapshot captured by this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameMode, humanSide, turn, engineState, candidates, pieces, activePly]);
+  }, [gameMode, humanSide, turn, engineState, candidates, pieces, activePly, outcomeTitle]);
 
   function clickPoint(x: number, y: number) {
     if (previewingBoard) {
@@ -1526,6 +1545,7 @@ export default function Home() {
       editSetupSquare(x, y);
       return;
     }
+    if (outcome) return;
     if (gameMode === "computer" && turn !== humanSide) return;
     const here = pieces.find((p) => p.x === x && p.y === y);
     if (!selectedPiece) {
@@ -1545,7 +1565,7 @@ export default function Home() {
   }
 
   function playMove(piece: Piece, x: number, y: number) {
-    if (piece.side !== turn || !isLegal(piece, x, y, pieces)) return;
+    if (outcome || piece.side !== turn || !isLegal(piece, x, y, pieces)) return;
     setVariationPreview(null);
     setPreviewedCandidateMove(null);
     setTimelinePreviewPly(null);
@@ -1566,11 +1586,12 @@ export default function Home() {
       wasEngineBest: bestUci === playedUci,
       bestBefore: bestUci ? uciMoveToName(bestUci, pieces) : undefined,
     };
-    setPieces((ps) =>
-      ps
-        .filter((p) => p.id !== captured?.id)
-        .map((p) => (p.id === piece.id ? { ...p, x, y } : p)),
-    );
+    const nextPieces = pieces
+      .filter((p) => p.id !== captured?.id)
+      .map((p) => (p.id === piece.id ? { ...p, x, y } : p));
+    const nextTurn = turn === "red" ? "black" : "red";
+    setPieces(nextPieces);
+    if (xiangqiOutcome(nextPieces, nextTurn)) setOutcomeOpen(true);
     setHistory((h) => [...h.slice(0, activePly), move]);
     setPositionScores((current) =>
       Object.fromEntries(
@@ -1582,7 +1603,7 @@ export default function Home() {
     setSelectedEngineLines([]);
     setEngineLines([]);
     setEngineState("thinking");
-    setTurn((t) => (t === "red" ? "black" : "red"));
+    setTurn(nextTurn);
   }
 
   function playCandidate(candidate: Candidate) {
@@ -1668,6 +1689,7 @@ export default function Home() {
     requestRef.current++;
     selectedRequestRef.current++;
     workerRef.current?.postMessage({ type: "stop" });
+    setOutcomeOpen(false);
     setPieces(initialPieces);
     setStartingPieces(initialPieces);
     setStartingTurn("red");
@@ -2223,13 +2245,6 @@ export default function Home() {
                           : `${turn === "red" ? "红" : "黑"}方走棋 · 点击棋子开始`}
           </div>
           <Collapsible title="对弈模式"><section className="game-mode-card panel" aria-label="对局模式">
-            <div className="mode-card-heading">
-              <span>局</span>
-              <div>
-                <strong>对弈模式</strong>
-                <small>选择练习方式，切换后自动刷新当前局面</small>
-              </div>
-            </div>
             <div className="game-mode-bar">
               {(["local", "computer", "setup"] as GameMode[]).map((mode) => (
                 <button
@@ -2246,15 +2261,22 @@ export default function Home() {
               ))}
             </div>
             {gameMode === "computer" && (
-              <button
-                className="side-choice"
-                onClick={() => {
-                  setHumanSide((side) => (side === "red" ? "black" : "red"));
-                  aiPositionRef.current = "";
-                }}
-              >
-                我执{humanSide === "red" ? "红" : "黑"}
-              </button>
+              <div className="computer-options">
+                <button
+                  className="side-choice"
+                  onClick={() => {
+                    setHumanSide((side) => (side === "red" ? "black" : "red"));
+                    aiPositionRef.current = "";
+                  }}
+                >
+                  我执{humanSide === "red" ? "红" : "黑"}
+                </button>
+                <label className="level-choice"><span>电脑等级</span>
+                  <select value={computerElo} onChange={(event) => { setComputerElo(Number(event.target.value)); aiPositionRef.current = ""; }}>
+                    {[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name, elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}
+                  </select>
+                </label>
+              </div>
             )}
           </section></Collapsible>
         </div>
@@ -2474,6 +2496,16 @@ export default function Home() {
           Pikafish · GPL-3.0
         </a>
       </footer>
+      {outcome && outcomeOpen && (
+        <div className="result-backdrop">
+          <section className="result-modal" role="alertdialog" aria-modal="true" aria-labelledby="result-title">
+            <div className="result-mark">胜</div>
+            <h2 id="result-title">{outcome.title}</h2>
+            <p>{outcome.detail}</p>
+            <div><button className="primary" onClick={reset}>再来一局</button><button onClick={() => setOutcomeOpen(false)}>查看棋局</button></div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

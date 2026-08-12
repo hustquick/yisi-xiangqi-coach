@@ -27,6 +27,8 @@ final class CoachController {
 
     static final String INITIAL_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1";
     static final List<Integer> AVAILABLE_DEPTHS = Collections.unmodifiableList(Arrays.asList(8, 10, 12, 14, 16));
+    static final int[] COMPUTER_ELOS = {1320, 1500, 1700, 1900, 2100, 2300, 2500, 2700, 2900, 3100};
+    static final String[] COMPUTER_LEVELS = {"业余一级", "业余三级", "业余五级", "业余七级", "业余九级", "专业一级", "专业三级", "专业五级", "专业七级", "专业九级"};
 
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -56,15 +58,13 @@ final class CoachController {
     String timelineEndFen = INITIAL_FEN;
     GameMode gameMode = GameMode.LOCAL;
     Side humanSide = Side.RED;
+    int computerLevelIndex = 4;
     SetupAction setupAction = SetupAction.MOVE;
     Side setupSide = Side.RED;
     PieceKind setupKind = PieceKind.ROOK;
     String setupMessage;
     String recordTitle = "新对局";
     String recordMessage;
-    private final Runnable computerMove = () -> {
-        if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide && !analyzing && !globalLines.isEmpty()) play(globalLines.get(0).firstMove());
-    };
 
     CoachController(Context context) { this.context = context.getApplicationContext(); }
 
@@ -83,6 +83,8 @@ final class CoachController {
     }
 
     Side sideToMove() { return position().sideToMove; }
+
+    String[] gameOutcome() { return gameMode == GameMode.SETUP ? null : XiangqiRules.outcome(sideToMove(), pieces()); }
 
     BoardPiece selectedPiece() {
         if (selectedSquare == null) return null;
@@ -146,7 +148,7 @@ final class CoachController {
         if (gameMode != GameMode.SETUP) refreshAnalysis();
     }
 
-    boolean canHumanMove() { return gameMode != GameMode.SETUP && (gameMode != GameMode.COMPUTER || sideToMove() == humanSide); }
+    boolean canHumanMove() { return gameOutcome() == null && gameMode != GameMode.SETUP && (gameMode != GameMode.COMPUTER || sideToMove() == humanSide); }
 
     void setGameMode(GameMode mode) {
         if (mode == gameMode) return;
@@ -165,10 +167,13 @@ final class CoachController {
             history.clear(); positionScores.clear(); activePly = 0; timelineEndFen = fen;
             legalMoves = new ArrayList<>(); globalLines = new ArrayList<>(); analyzing = false; setupAction = SetupAction.MOVE;
             notifyChanged();
-        } else refreshAnalysis();
+        } else if (gameOutcome() != null) notifyChanged();
+        else refreshAnalysis();
     }
 
-    void setHumanSide(Side side) { humanSide = side; cancelComputerMove(); scheduleComputerMove(); notifyChanged(); }
+    void setHumanSide(Side side) { humanSide = side; cancelComputerMove(); refreshAnalysis(); }
+    void cycleComputerLevel() { computerLevelIndex = (computerLevelIndex + 1) % COMPUTER_ELOS.length; if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide) refreshAnalysis(); else notifyChanged(); }
+    String computerLevelLabel() { return COMPUTER_LEVELS[computerLevelIndex] + " · Elo " + COMPUTER_ELOS[computerLevelIndex]; }
     void setSetupAction(SetupAction action) { setupAction = action; clearSelection(); setupMessage = null; notifyChanged(); }
     void setSetupPiece(Side side, PieceKind kind) { setupAction = SetupAction.PIECE; setupSide = side; setupKind = kind; clearSelection(); setupMessage = null; notifyChanged(); }
     void finishSetup() { setGameMode(GameMode.LOCAL); }
@@ -253,7 +258,7 @@ final class CoachController {
         legalMoves = new ArrayList<>();
         clearSelection();
         notifyChanged();
-        refreshAnalysis();
+        if (gameOutcome() == null) refreshAnalysis();
     }
 
     void undo() {
@@ -540,7 +545,7 @@ final class CoachController {
     }
 
     private void refreshAnalysis() {
-        if (gameMode == GameMode.SETUP) return;
+        if (gameMode == GameMode.SETUP || gameOutcome() != null) return;
         final String fenAtStart = fen;
         final int depthAtStart = analysisDepth;
         final int generation = ++positionGeneration;
@@ -556,6 +561,16 @@ final class CoachController {
                 if (positionGeneration != generation) return;
                 ensureInitialized();
                 if (positionGeneration != generation) return;
+                if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide) {
+                    String move = PikafishNative.bestMove(fenAtStart, depthAtStart, COMPUTER_ELOS[computerLevelIndex]);
+                    if (move.startsWith("error:")) throw new IllegalStateException(move.substring(6));
+                    main.post(() -> {
+                        if (positionGeneration != generation || !fen.equals(fenAtStart) || sideToMove() == humanSide) return;
+                        analyzing = false;
+                        play(move);
+                    });
+                    return;
+                }
                 int previewDepth = Math.min(7, depthAtStart);
                 List<EngineLine> previewLines = analyze(fenAtStart, previewDepth, 5, Collections.emptyList());
                 main.post(() -> {
@@ -577,7 +592,6 @@ final class CoachController {
                     analyzing = false;
                     errorMessage = null;
                     notifyChanged();
-                    scheduleComputerMove();
                     BoardPiece selected = selectedPiece();
                     if (selected != null && !analyzingSelection && selectedLines.isEmpty()) select(selected);
                     scheduleScoreBackfill();
@@ -650,12 +664,7 @@ final class CoachController {
         fen = makeFen(updated, sideToMove()); timelineEndFen = fen; notifyChanged();
     }
 
-    private void scheduleComputerMove() {
-        cancelComputerMove();
-        if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide && !analyzing && !globalLines.isEmpty()) main.postDelayed(computerMove, 520);
-    }
-
-    private void cancelComputerMove() { main.removeCallbacks(computerMove); }
+    private void cancelComputerMove() { }
 
     private void interruptAnalysis() { interruptQueue.execute(PikafishNative::stop); }
 

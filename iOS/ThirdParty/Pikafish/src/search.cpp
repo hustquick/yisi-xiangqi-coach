@@ -222,9 +222,11 @@ void Search::Worker::start_searching() {
         main_manager()->tm.advance_nodes_time(threads.nodes_searched()
                                               - limits.inc[rootPos.side_to_move()]);
 
+    Skill skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
+
     Worker* bestThread = this;
 
-    if (!limits.depth)
+    if (!limits.depth && !skill.enabled())
         bestThread = threads.get_best_thread()->worker.get();
 
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
@@ -293,6 +295,12 @@ bool Search::Worker::iterative_deepening() {
     }
 
     usize multiPV = usize(options["MultiPV"]);
+    Skill skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
+
+    // Search several root moves privately so a limited-strength opponent can
+    // choose a plausible sub-optimal move without reducing analysis quality.
+    if (skill.enabled())
+        multiPV = std::max(multiPV, usize(4));
 
     multiPV = std::min(multiPV, rootMoves.size());
 
@@ -520,6 +528,9 @@ bool Search::Worker::iterative_deepening() {
             && VALUE_MATE - std::abs(rootMoves[0].score) <= 2 * limits.mate)
             threads.stop = true;
 
+        if (skill.enabled() && skill.time_to_pick(rootDepth))
+            skill.pick_best(rootMoves, multiPV);
+
         if (!mainThread)
             continue;
 
@@ -585,6 +596,11 @@ bool Search::Worker::iterative_deepening() {
         return false;
 
     mainThread->previousTimeReduction = timeReduction;
+
+    if (skill.enabled())
+        std::swap(rootMoves[0],
+                  *std::find(rootMoves.begin(), rootMoves.end(),
+                             skill.best ? skill.best : skill.pick_best(rootMoves, multiPV)));
 
     return uciPvSent;
 }
@@ -1918,6 +1934,33 @@ void update_quiet_histories(
     workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
       << bonus * (bonus > -7 ? 913 : 553) / 1024;
 }
+}
+
+// When playing with strength handicap, choose one move from the privately
+// searched root candidates. Weaker levels receive a larger deterministic and
+// random bonus for moves below the engine's first choice.
+Move Skill::pick_best(const RootMoves& rootMoves, usize multiPV) {
+    static PRNG rng(now());
+
+    Value  topScore = rootMoves[0].score;
+    int    delta    = std::min(topScore - rootMoves[multiPV - 1].score, int(PawnValue));
+    int    maxScore = -VALUE_INFINITE;
+    double weakness = 120 - 2 * level;
+
+    for (usize i = 0; i < multiPV; ++i)
+    {
+        int push = int(weakness * int(topScore - rootMoves[i].score)
+                       + delta * (rng.rand<unsigned>() % int(weakness)))
+                 / 128;
+
+        if (rootMoves[i].score + push >= maxScore)
+        {
+            maxScore = rootMoves[i].score + push;
+            best     = rootMoves[i].pv[0];
+        }
+    }
+
+    return best;
 }
 
 // Used to print debug info and, more importantly, to detect

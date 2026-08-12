@@ -21,6 +21,19 @@ final class XiangqiRules {
         return result;
     }
 
+    static String[] outcome(Side sideToMove, List<BoardPiece> pieces) {
+        boolean redKing = false, blackKing = false;
+        for (BoardPiece piece : pieces) if (piece.kind == PieceKind.KING) {
+            if (piece.side == Side.RED) redKing = true; else blackKing = true;
+        }
+        if (!redKing) return new String[]{"黑方获胜", "红方的帅已被吃掉。"};
+        if (!blackKing) return new String[]{"红方获胜", "黑方的将已被吃掉。"};
+        if (!legalMoves(sideToMove, pieces).isEmpty()) return null;
+        String loser = sideToMove == Side.RED ? "红方" : "黑方";
+        String winner = sideToMove == Side.RED ? "黑方" : "红方";
+        return new String[]{winner + "获胜", loser + "已无合法着法，" + winner + "赢得本局。"};
+    }
+
     static boolean isLegal(BoardPiece piece, int file, int rank, List<BoardPiece> pieces) {
         if (!isPseudoLegal(piece, file, rank, pieces)) return false;
         List<BoardPiece> next = new ArrayList<>();

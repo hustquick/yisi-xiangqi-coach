@@ -16,6 +16,25 @@ enum GameMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+struct ComputerLevel: Identifiable, Hashable, Sendable {
+    let name: String
+    let elo: Int
+    var id: Int { elo }
+
+    static let all: [ComputerLevel] = [
+        .init(name: "业余一级", elo: 1320), .init(name: "业余三级", elo: 1500),
+        .init(name: "业余五级", elo: 1700), .init(name: "业余七级", elo: 1900),
+        .init(name: "业余九级", elo: 2100), .init(name: "专业一级", elo: 2300),
+        .init(name: "专业三级", elo: 2500), .init(name: "专业五级", elo: 2700),
+        .init(name: "专业七级", elo: 2900), .init(name: "专业九级", elo: 3100)
+    ]
+}
+
+enum SearchElo {
+    static let minimum = 1320
+    static let maximum = 3190
+}
+
 enum SetupTool: Hashable, Sendable {
     case move, erase, piece(XiangqiSide, PieceKind)
 }
@@ -97,6 +116,11 @@ struct ParsedPosition: Sendable {
 /// Fast, deterministic Xiangqi rules used by the UI. Engine analysis is never
 /// consulted to select a piece, show destinations, or apply a human move.
 enum XiangqiRules {
+    struct Outcome: Equatable {
+        let title: String
+        let detail: String
+    }
+
     static func legalMoves(for side: XiangqiSide, pieces: [BoardPiece]) -> [String] {
         pieces.filter { $0.side == side }.flatMap { legalMoves(for: $0, pieces: pieces) }
     }
@@ -118,6 +142,16 @@ enum XiangqiRules {
         }
         next.append(BoardPiece(side: piece.side, kind: piece.kind, file: toFile, rank: toRank))
         return !isInCheck(piece.side, pieces: next)
+    }
+
+    static func outcome(for sideToMove: XiangqiSide, pieces: [BoardPiece]) -> Outcome? {
+        let redHasKing = pieces.contains { $0.side == .red && $0.kind == .king }
+        let blackHasKing = pieces.contains { $0.side == .black && $0.kind == .king }
+        if !redHasKing { return Outcome(title: "黑方获胜", detail: "红方的帅已被吃掉。") }
+        if !blackHasKing { return Outcome(title: "红方获胜", detail: "黑方的将已被吃掉。") }
+        guard legalMoves(for: sideToMove, pieces: pieces).isEmpty else { return nil }
+        let winner = sideToMove.opposite.title
+        return Outcome(title: "\(winner)获胜", detail: "\(sideToMove.title)已无合法着法，\(winner)赢得本局。")
     }
 
     private static func isPseudoLegal(_ piece: BoardPiece, toFile file: Int, toRank rank: Int, pieces: [BoardPiece]) -> Bool {

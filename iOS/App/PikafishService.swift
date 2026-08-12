@@ -72,6 +72,19 @@ final class PikafishService: @unchecked Sendable {
         }
     }
 
+    func bestMove(fen: String, depth: Int, elo: Int) async throws -> String {
+        try await onEngineQueue {
+            try self.ensureInitialized()
+            let response: String = fen.withCString { pointer in
+                guard let result = pf_best_move(pointer, Int32(depth), Int32(elo)) else { return "" }
+                return String(cString: result)
+            }
+            if response.hasPrefix("error:") { throw PikafishError.engine(String(response.dropFirst(6))) }
+            guard response.count >= 4 else { throw PikafishError.malformedResponse }
+            return response
+        }
+    }
+
     func legalMoves(fen: String) async throws -> [String] {
         try await onEngineQueue {
             try self.ensureInitialized()
