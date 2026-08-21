@@ -90,6 +90,11 @@ struct AnalysisLine {
     usize nps = 0;
 };
 
+struct AnalysisState {
+    std::map<usize, AnalysisLine> lines;
+    std::mutex mutex;
+};
+
 std::string analyzePosition(const std::string& fen, int depth, int multipv,
                             const std::string& searchMoves) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
@@ -102,11 +107,12 @@ std::string analyzePosition(const std::string& fen, int depth, int multipv,
         if (gEngine->set_position(fen, {}))
             return "{\"lines\":[],\"error\":\"invalid FEN\"}";
 
-        std::map<usize, AnalysisLine> lines;
-        std::mutex linesMutex;
-        gEngine->set_on_update_full([&](const Engine::InfoFull& info) {
-            std::lock_guard<std::mutex> callbackLock(linesMutex);
-            auto& line = lines[info.multiPV];
+        // Engine retains this callback beyond the search. Keep its state on
+        // the heap so a subsequent Elo search cannot call into dead stack data.
+        auto state = std::make_shared<AnalysisState>();
+        gEngine->set_on_update_full([state](const Engine::InfoFull& info) {
+            std::lock_guard<std::mutex> callbackLock(state->mutex);
+            auto& line = state->lines[info.multiPV];
             if (info.depth < line.depth) return;
             line.depth = info.depth;
             line.selDepth = info.selDepth;
@@ -127,7 +133,8 @@ std::string analyzePosition(const std::string& fen, int depth, int multipv,
         std::ostringstream json;
         json << "{\"lines\":[";
         bool first = true;
-        for (const auto& [rank, line] : lines) {
+        std::lock_guard<std::mutex> stateLock(state->mutex);
+        for (const auto& [rank, line] : state->lines) {
             if (line.pv.empty()) continue;
             if (!first) json << ',';
             first = false;
@@ -140,6 +147,7 @@ std::string analyzePosition(const std::string& fen, int depth, int multipv,
                  << ",\"nps\":" << line.nps << '}';
         }
         json << "],\"error\":null}";
+        gEngine->set_on_update_full([](const Engine::InfoFull&) {});
         return json.str();
     } catch (const std::exception& error) {
         return "{\"lines\":[],\"error\":\"" + escapeJson(error.what()) + "\"}";
@@ -150,6 +158,7 @@ std::string bestMoveFor(const std::string& fen, int depth, int elo) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
     try {
         if (!gEngine) return "error:engine not initialized";
+        gEngine->set_on_update_full([](const Engine::InfoFull&) {});
         setOption("UCI_LimitStrength", "true");
         setOption("UCI_Elo", std::to_string(std::clamp(elo, Search::Skill::LowestElo,
                                                        Search::Skill::HighestElo)));
@@ -164,6 +173,9 @@ std::string bestMoveFor(const std::string& fen, int depth, int elo) {
         });
         Search::LimitsType limits;
         limits.depth = std::clamp(depth, 1, 30);
+        // Rated play must answer promptly on a phone. Elo limiting still
+        // controls strength; movetime prevents deep fixed-depth stalls.
+        limits.movetime = std::clamp(450 + (elo - 1320) / 2, 450, 1200);
         limits.startTime = now();
         gEngine->go(limits);
         gEngine->wait_for_search_finished();

@@ -1,33 +1,88 @@
 /* Pikafish browser worker. GPL-3.0; source: /pikafish/SOURCE.md */
 importScripts("/pikafish/pikafish.js");
 
+// Emscripten's pthread helper starts this same worker URL with the
+// "em-pthread" name.  It must run only the generated runtime bootstrap;
+// installing the app-level message handler below would replace Emscripten's
+// pthread mailbox and leave module initialization stuck before the NNUE
+// download begins (most visible in desktop Chromium browsers).
+if (self.name === "em-pthread") {
+  void PikafishModule();
+} else {
 let analyze;
 let ready;
 let localEngine = false;
 let activeController = null;
 let analysisSequence = 0;
+const NETWORK_BYTES = 51585654;
 
 async function boot() {
-  try {
-    const health = await fetch("http://127.0.0.1:8789/health", { signal: AbortSignal.timeout(800) });
-    if (health.ok) {
-      const localInfo = await health.json();
-      if (localInfo.engine !== "Pikafish") throw new Error("本地端口不是 Pikafish");
-      localEngine = true;
-      postMessage({ type: "ready", mode: "native", threads: localInfo.threads, network: localInfo.network });
-      return;
-    }
-  } catch {}
+  // The packaged PWA must always use its own WASM engine. Probing loopback on
+  // an online page can accidentally attach to an old local-dev process, which
+  // suppresses the download indicator and can leave analysis waiting forever.
+  const localDevelopment = ["localhost", "127.0.0.1", "::1"].includes(self.location.hostname);
+  if (localDevelopment) {
+    try {
+      const health = await fetch("http://127.0.0.1:8789/health", { signal: AbortSignal.timeout(800) });
+      if (health.ok) {
+        const localInfo = await health.json();
+        if (localInfo.engine !== "Pikafish") throw new Error("本地端口不是 Pikafish");
+        localEngine = true;
+        postMessage({ type: "ready", mode: "native", threads: localInfo.threads, network: localInfo.network });
+        return;
+      }
+    } catch {}
+  }
+  // Report immediately, before the WebAssembly runtime itself is fetched and
+  // compiled, so desktop users never stare at an unexplained “计算中”.
+  postMessage({ type: "download-progress", loaded: 0, total: NETWORK_BYTES, complete: false });
   const engineModule = await PikafishModule({
     locateFile(path) { return `/pikafish/${path.replace("pikafish-web", "pikafish")}`; },
     print() {},
     printErr(message) { console.warn("Pikafish:", message); },
   });
-  const networkResponse = await fetch("/api/pikafish-network");
-  if (!networkResponse.ok) throw new Error(`NNUE network download failed: ${networkResponse.status}`);
-  engineModule.FS.writeFile("/pikafish.nnue", new Uint8Array(await networkResponse.arrayBuffer()));
+  const networkFile = engineModule.FS.open("/pikafish.nnue", "w");
+  let downloadedBytes = 0;
+  let lastReportedPercent = -1;
+  const reportDownload = (complete = false) => {
+    const percent = Math.floor((downloadedBytes / NETWORK_BYTES) * 100);
+    if (!complete && percent === lastReportedPercent) return;
+    lastReportedPercent = percent;
+    postMessage({
+      type: "download-progress",
+      loaded: downloadedBytes,
+      total: NETWORK_BYTES,
+      complete,
+    });
+  };
+  reportDownload();
+  try {
+    for (const part of ["00", "01", "02", "03", "04", "05", "06"]) {
+      const networkResponse = await fetch(`/pikafish/network/part-${part}.bin`);
+      if (!networkResponse.ok) throw new Error(`NNUE network download failed: ${networkResponse.status}`);
+      if (networkResponse.body) {
+        const reader = networkResponse.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          engineModule.FS.write(networkFile, value, 0, value.length);
+          downloadedBytes += value.length;
+          reportDownload();
+        }
+      } else {
+        const bytes = new Uint8Array(await networkResponse.arrayBuffer());
+        engineModule.FS.write(networkFile, bytes, 0, bytes.length);
+        downloadedBytes += bytes.length;
+        reportDownload();
+      }
+    }
+  } finally {
+    engineModule.FS.close(networkFile);
+  }
   engineModule.cwrap("pikafish_init", "string", [])();
   analyze = engineModule.cwrap("pikafish_analyze", "string", ["string", "number", "number", "number"]);
+  downloadedBytes = NETWORK_BYTES;
+  reportDownload(true);
   postMessage({ type: "ready", mode: "wasm" });
 }
 
@@ -64,13 +119,31 @@ self.onmessage = async event => {
       postMessage({ type: "analysis", id: event.data.id, scope: event.data.scope, lines, mode: "native" });
       return;
     }
-    if (event.data.searchMoves?.length) throw new Error("浏览器皮卡鱼暂不支持限定着法搜索，请使用本地原生模式");
-    if (event.data.elo) throw new Error("参考 Elo 人机对战需要运行 npm run local 启动本地皮卡鱼");
-    const raw = analyze(event.data.fen, event.data.depth ?? 12, event.data.multiPV ?? 5, 0);
+    // The WASM wrapper implements UCI_LimitStrength/UCI_Elo itself. Keeping
+    // this path enabled is essential for the installed iPhone PWA.
+    const requestedMoves = Array.isArray(event.data.searchMoves)
+      ? event.data.searchMoves
+      : [];
+    const raw = analyze(
+      event.data.fen,
+      event.data.depth ?? 8,
+      requestedMoves.length
+        ? Math.min(5, Math.max(event.data.multiPV ?? 1, requestedMoves.length))
+        : event.data.multiPV ?? 3,
+      event.data.elo ?? 0,
+    );
     if (sequence !== analysisSequence) return;
-    postMessage({ type: "analysis", id: event.data.id, scope: event.data.scope, lines: JSON.parse(raw) });
+    let lines = JSON.parse(raw);
+    // The compact wrapper cannot pass `searchmoves` into Pikafish. Filter the
+    // returned MultiPV set instead of failing the whole browser engine.
+    if (requestedMoves.length) {
+      const allowed = new Set(requestedMoves);
+      lines = lines.filter(line => allowed.has(String(line.pv || "").split(/\s+/)[0]));
+    }
+    postMessage({ type: "analysis", id: event.data.id, scope: event.data.scope, lines });
   } catch (error) {
     if (sequence !== analysisSequence || error?.name === "AbortError") return;
     postMessage({ type: "error", id: event.data.id, scope: event.data.scope, message: String(error) });
   }
 };
+}

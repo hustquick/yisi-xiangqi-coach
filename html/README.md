@@ -47,4 +47,20 @@ npm run build   # 验证 HTML 生产构建
 npm test        # 构建并检查 HTML 主要功能
 ```
 
+## PWA 与 Cloudflare Pages
+
+在线 PWA 直接在浏览器中运行 Pikafish WebAssembly，不依赖服务器端引擎。首次访问会分段下载应用外壳、引擎和 NNUE；缓存完成后可离线启动。Cloudflare Pages 已包含多线程 WASM 所需的跨源隔离响应头。
+
+```bash
+npm install
+npm run build:pwa                         # 静态产物位于 out/
+npx wrangler login                        # 本机首次部署时执行一次
+npx wrangler pages project create yisi-xiangqi-pwa --production-branch main
+npm run deploy:pwa
+```
+
+项目只需创建一次。以后更新直接运行 `npm run deploy:pwa`。
+
+在 iPhone 上用 Safari 打开部署后的 `https://yisi-xiangqi-pwa.pages.dev`，点“共享”→“添加到主屏幕”→“添加”。主屏幕版本以独立窗口运行，不受免费开发者签名七天有效期限制。
+
 皮卡鱼及本项目内的相应引擎文件遵循 GPL-3.0，来源说明见 [`public/pikafish/SOURCE.md`](public/pikafish/SOURCE.md)。

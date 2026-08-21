@@ -13,6 +13,7 @@
 .engine-warning{margin:14px 0;padding:12px;border-left:3px solid #b33b2f;background:#faefec}.engine-warning strong{font-size:13px;color:#9d3429}.engine-warning p{margin:5px 0 0;font-size:11px;color:#8a625d}
 @media(max-width:760px){.board-coordinates{padding:0 13px;height:26px;font-size:14px}.top-coordinates{margin-bottom:8px}.bottom-coordinates{margin-top:8px}}
 .status.engine-loading i,.status.engine-thinking i{background:#c79245;animation:pulse 1s infinite}.status.engine-error i{background:#b33b2f}.candidate-list.analyzing{opacity:.58}.engine-credit{font:10px Arial;color:#8b857b;text-decoration:none;white-space:nowrap}.engine-credit:hover{text-decoration:underline}@keyframes pulse{50%{opacity:.3}}
+.engine-download{margin:0 0 14px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:rgba(255,253,248,.88);color:var(--ink)}.engine-download>div{display:flex;justify-content:space-between;gap:12px;align-items:center}.engine-download strong{font-size:12px}.engine-download span,.engine-download small{font-size:10px;color:var(--muted)}.engine-download progress{display:block;width:100%;height:7px;margin:8px 0 5px;accent-color:var(--green)}.engine-download small{display:block;line-height:1.5}
 
 /* Shared HTML / iOS / Android feature set */
 .intro,.depth-card,.workspace,.situation-panel,footer{max-width:1200px}
@@ -98,3 +99,4 @@
 .depth-setting strong{font-size:13px}.depth-setting small{font-size:10px;color:var(--muted)}
 .depth-setting .depth-options{width:100%;display:flex}.depth-setting .depth-options button{flex:1}
 @media(max-width:980px){.workspace{grid-template-columns:1fr;max-width:760px}.coach-sidebar{width:100%}}
+html{min-height:100%;background:var(--paper)}body{min-height:100dvh}@media(display-mode:standalone){body{padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);overscroll-behavior-y:none}main{min-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))}}

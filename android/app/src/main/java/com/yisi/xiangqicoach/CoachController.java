@@ -562,7 +562,10 @@ final class CoachController {
                 ensureInitialized();
                 if (positionGeneration != generation) return;
                 if (gameMode == GameMode.COMPUTER && sideToMove() != humanSide) {
-                    String move = PikafishNative.bestMove(fenAtStart, depthAtStart, COMPUTER_ELOS[computerLevelIndex]);
+                    // Strength is governed by UCI_Elo. Keep the response-time
+                    // depth modest so rated play remains interactive on phones.
+                    int playDepth = Math.min(depthAtStart, 10);
+                    String move = PikafishNative.bestMove(fenAtStart, playDepth, COMPUTER_ELOS[computerLevelIndex]);
                     if (move.startsWith("error:")) throw new IllegalStateException(move.substring(6));
                     main.post(() -> {
                         if (positionGeneration != generation || !fen.equals(fenAtStart) || sideToMove() == humanSide) return;

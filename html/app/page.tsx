@@ -1136,7 +1136,9 @@ export default function Home() {
   const [turn, setTurn] = useState<Side>("red");
   const [history, setHistory] = useState<Move[]>([]);
   const [activePly, setActivePly] = useState(0);
-  const [analysisDepth, setAnalysisDepth] = useState<number>(12);
+  // Keep the installed PWA responsive by default; deeper searches remain
+  // available in the analysis settings.
+  const [analysisDepth, setAnalysisDepth] = useState<number>(8);
   const [gameMode, setGameMode] = useState<GameMode>("local");
   const [humanSide, setHumanSide] = useState<Side>("red");
   const [computerElo, setComputerElo] = useState(2100);
@@ -1158,11 +1160,16 @@ export default function Home() {
   >("loading");
   const [engineMode, setEngineMode] = useState<"native" | "wasm">("wasm");
   const [engineThreads, setEngineThreads] = useState<number | null>(null);
+  const [engineDownload, setEngineDownload] = useState<{
+    loaded: number;
+    total: number;
+  } | null>(null);
   const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [positionScores, setPositionScores] = useState<Record<number, number>>(
     {},
   );
   const [backfillVersion, setBackfillVersion] = useState(0);
+  const [workerGeneration, setWorkerGeneration] = useState(0);
   const [selectedEngineLines, setSelectedEngineLines] = useState<EngineLine[]>(
     [],
   );
@@ -1173,6 +1180,14 @@ export default function Home() {
   const requestRef = useRef(0);
   const selectedRequestRef = useRef(100000);
   const outcome = gameMode === "setup" ? null : xiangqiOutcome(pieces, turn);
+
+  function restartEngineWorker() {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setEngineConnected(false);
+    setEngineState("loading");
+    setWorkerGeneration((value) => value + 1);
+  }
   const outcomeTitle = outcome?.title;
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1299,7 +1314,13 @@ export default function Home() {
     const worker = new Worker("/pikafish/engine-worker.js");
     workerRef.current = worker;
     worker.onmessage = (event) => {
+      if (event.data?.type === "download-progress") {
+        const loaded = Number(event.data.loaded) || 0;
+        const total = Number(event.data.total) || 1;
+        setEngineDownload(event.data.complete ? null : { loaded, total });
+      }
       if (event.data?.type === "ready") {
+        setEngineDownload(null);
         setEngineMode(event.data.mode === "native" ? "native" : "wasm");
         setEngineThreads(Number(event.data.threads) || null);
         setEngineConnected(true);
@@ -1371,21 +1392,25 @@ export default function Home() {
         event.data.scope !== "selected" &&
         (event.data.id == null || event.data.id === requestRef.current)
       ) {
+        setEngineDownload(null);
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         setEngineLines([]);
         setEngineState("error");
       }
     };
-    worker.onerror = () => setEngineState("error");
+    worker.onerror = () => {
+      setEngineDownload(null);
+      setEngineState("error");
+    };
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (selectedTimeoutRef.current) clearTimeout(selectedTimeoutRef.current);
       if (candidateClickTimeoutRef.current)
         clearTimeout(candidateClickTimeoutRef.current);
       worker.terminate();
-      workerRef.current = null;
+      if (workerRef.current === worker) workerRef.current = null;
     };
-  }, []);
+  }, [workerGeneration]);
 
   useEffect(() => {
     if (!workerRef.current || !engineConnected) return;
@@ -1408,14 +1433,13 @@ export default function Home() {
       id,
       fen: positionFen(pieces, turn, activePly),
       depth: analysisDepth,
-      multiPV: gameMode === "computer" && turn !== humanSide ? 1 : 5,
+      multiPV: gameMode === "computer" && turn !== humanSide ? 1 : 3,
       elo: gameMode === "computer" && turn !== humanSide ? computerElo : 0,
     });
     timeoutRef.current = setTimeout(() => {
       if (id !== requestRef.current) return;
       requestRef.current++;
-      workerRef.current?.postMessage({ type: "stop" });
-      setEngineState("error");
+      restartEngineWorker();
     }, 45000);
   }, [pieces, turn, activePly, analysisDepth, engineConnected, gameMode, humanSide, computerElo, outcomeTitle]);
 
@@ -1573,7 +1597,12 @@ export default function Home() {
     if (selectedTimeoutRef.current) clearTimeout(selectedTimeoutRef.current);
     requestRef.current++;
     selectedRequestRef.current++;
-    workerRef.current?.postMessage({ type: "stop" });
+    // A synchronous WASM search cannot process a queued stop until it returns.
+    // Recreate it so the legal move takes priority and the new position starts
+    // analysis immediately.
+    if (engineState === "thinking" && engineMode === "wasm")
+      restartEngineWorker();
+    else workerRef.current?.postMessage({ type: "stop" });
     const captured = pieces.find((p) => p.x === x && p.y === y);
     const playedUci = `${pieceSquare(piece)}${String.fromCharCode(97 + x)}${9 - y}`;
     const bestUci = engineLines[0]?.pv.split(/\s+/)[0];
@@ -1806,6 +1835,7 @@ export default function Home() {
   function changeDepth(depth: number) {
     if (depth === analysisDepth) return;
     selectedRequestRef.current++;
+    if (engineState === "thinking") restartEngineWorker();
     setSelected(null);
     setPreviewedCandidateMove(null);
     setSelectedEngineLines([]);
@@ -1816,7 +1846,12 @@ export default function Home() {
     if (mode === gameMode) return;
     requestRef.current++;
     selectedRequestRef.current++;
-    workerRef.current?.postMessage({ type: "stop" });
+    // A synchronous WASM search cannot process a queued stop until it returns.
+    // Recreate it so the legal move takes priority and the new position starts
+    // analysis immediately.
+    if (engineState === "thinking" && engineMode === "wasm")
+      restartEngineWorker();
+    else workerRef.current?.postMessage({ type: "stop" });
     setVariationPreview(null);
     setTimelinePreviewPly(null);
     setSelected(null);
@@ -2129,6 +2164,20 @@ export default function Home() {
                           ? `皮卡鱼思考中，仍可继续行棋；落子后自动改算${turn === "red" ? "黑" : "红"}方应着`
                           : `${turn === "red" ? "红" : "黑"}方走棋 · 点击棋子开始`}
           </div>
+          {engineDownload && (
+            <div className="engine-download" role="status" aria-live="polite">
+              <div>
+                <strong>
+                  正在准备本地皮卡鱼 {Math.min(100, Math.round((engineDownload.loaded / engineDownload.total) * 100))}%
+                </strong>
+                <span>
+                  {(engineDownload.loaded / 1024 / 1024).toFixed(1)} / {(engineDownload.total / 1024 / 1024).toFixed(1)} MB
+                </span>
+              </div>
+              <progress value={engineDownload.loaded} max={engineDownload.total} />
+              <small>首次使用需要下载棋力网络；下载期间棋盘仍可正常行棋。</small>
+            </div>
+          )}
         </div>
 
         <div className="coach-sidebar">
