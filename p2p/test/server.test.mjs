@@ -30,6 +30,8 @@ test('注册、密码验证、来源限制与对局权限', async () => {
     assert.equal((await post('/friends', {}, b.body.token)).body.friends.length, 0, '每个账号独立保存好友');
     assert.equal((await post('/presence', { mode: 'bad' }, b.body.token)).status, 400);
     assert.equal((await post('/presence', { mode: 'invisible' }, b.body.token)).body.presence, 'invisible');
+    const returningB = await post('/login', { name: 'B', password: '2' });
+    assert.equal(returningB.body.presence, 'invisible', '重新登录自动保持上次隐身状态');
     const newer = await post('/login', { name: 'A', password: '1' });
     assert.equal(newer.status, 200);
     assert.equal((await post('/friends', {}, newer.body.token)).body.friends[0].name, 'b', '重新登录保留好友');

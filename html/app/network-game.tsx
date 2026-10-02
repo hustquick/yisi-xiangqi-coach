@@ -202,15 +202,14 @@ export function useNetworkGame(options: {
   const panel = <details className="collapsible-module network-panel" open><summary>网络对战</summary><div className="collapsible-content" style={{ display: 'grid', gap: 8 }}>
     <style>{`.network-panel label{display:grid;gap:6px;font-size:13px;color:#365a47}.network-panel input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 10px;border:1px solid #d9d3c4;border-radius:8px;background:#fff;font:inherit}.network-panel button{min-height:38px;padding:7px 12px;margin:3px 3px 3px 0;border:1px solid #c9d4c9;border-radius:8px;background:#edf3ed;color:#245f43;font:inherit;cursor:pointer}.network-panel button:disabled{opacity:.45;cursor:default}.network-panel p{font-size:14px;overflow-wrap:anywhere}.network-panel small{color:#77746b;line-height:1.6}`}</style>
     {!logged && <>
-      <div role="group" aria-label="注册或登录">
-        <button disabled={authBusy} aria-pressed={authMode === 'login'} onClick={() => { setAuthMode('login'); setPassword(''); setConfirmPassword(''); setStatus('请输入账号和密码'); }}>登录</button>
-        <button disabled={authBusy} aria-pressed={authMode === 'register'} onClick={() => { setAuthMode('register'); setPassword(''); setConfirmPassword(''); setStatus('创建账号，开始对战'); }}>注册</button>
-      </div>
       <form onSubmit={e => { e.preventDefault(); void login(authMode === 'register'); }} style={{ display: 'grid', gap: 8 }}>
         <label>账号 <input aria-label="网络账号" required disabled={authBusy} autoComplete="username" value={name} onChange={e => setName(e.target.value)} /></label>
         <label>密码 <input aria-label="网络密码" required maxLength={128} disabled={authBusy} type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} /></label>
-        {authMode === 'register' && <><label>确认密码 <input aria-label="确认密码" required maxLength={128} disabled={authBusy} type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label><small>密码无需复杂组合，再输入一次即可确认。</small></>}
-        <button type="submit" disabled={authBusy}>{authBusy ? '请稍候…' : authMode === 'register' ? '注册并上线' : '登录并上线'}</button>
+        {authMode === 'register' && <label>确认密码 <input aria-label="确认密码" required maxLength={128} disabled={authBusy} type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label>}
+        <div role="group" aria-label="注册或登录">
+          <button type={authMode === 'login' ? 'submit' : 'button'} disabled={authBusy} aria-pressed={authMode === 'login'} onClick={() => { if (authMode !== 'login') { setAuthMode('login'); setConfirmPassword(''); setStatus('请输入账号和密码'); } }}>登录</button>
+          <button type={authMode === 'register' ? 'submit' : 'button'} disabled={authBusy} aria-pressed={authMode === 'register'} onClick={() => { if (authMode !== 'register') { setAuthMode('register'); setConfirmPassword(''); setStatus('创建账号，开始对战'); } }}>注册</button>
+        </div>
       </form>
     </>}
     {!['未登录', '请输入账号和密码', '创建账号，开始对战', '已登录 · 等待邀请'].includes(status) && <p role="status">{status}{active ? ` · 你执${side === 'red' ? '红' : '黑'}` : ''}</p>}

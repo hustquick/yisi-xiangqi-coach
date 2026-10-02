@@ -15,16 +15,16 @@ try {
     await page.getByLabel('网络账号', { exact: true }).fill(`test${stamp}${suffix}`);
     await page.getByLabel('网络密码', { exact: true }).fill('1');
     await page.getByLabel('确认密码', { exact: true }).fill('2');
-    await page.getByRole('button', { name: '注册并上线', exact: true }).click();
+    await page.getByRole('button', { name: '注册', exact: true }).click();
     await page.getByRole('status').filter({ hasText: '两次输入的密码不一致' }).waitFor();
     await page.getByLabel('确认密码', { exact: true }).fill('1');
-    await page.getByRole('button', { name: '注册并上线', exact: true }).click();
+    await page.getByRole('button', { name: '注册', exact: true }).click();
     await page.getByRole('combobox', { name: '账户状态', exact: true }).waitFor();
     await page.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0);
     await page.getByLabel('网络密码', { exact: true }).fill('1');
-    await page.getByRole('button', { name: '登录并上线', exact: true }).click();
+    await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.getByRole('combobox', { name: '账户状态', exact: true }).waitFor();
   }
   assert.equal(await b.getByRole('button', { name: '账户信息', exact: true }).count(), 0);
@@ -47,7 +47,7 @@ try {
   await friendRow.getByText(`test${stamp}b · 离线`, { exact: true }).waitFor();
   assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
   await b.getByLabel('网络密码', { exact: true }).fill('1');
-  await b.getByRole('button', { name: '登录并上线', exact: true }).click();
+  await b.getByRole('button', { name: '登录', exact: true }).click();
   await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
   await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
   await b.getByRole('button', { name: '接受', exact: true }).click();
