@@ -14,7 +14,7 @@ const json = (res, status, value) => {
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
 // Live moves stay peer-to-peer; explicitly saved personal records are private account resources.
-export function createSignalingServer({ database = 'accounts.sqlite', origins = [], iceServers = [], turnSecret = '', turnHost = '', now = Date.now } = {}) {
+export function createSignalingServer({ database = 'accounts.sqlite', origins = [], iceServers = [], turnSecret = '', turnHost = '', now = Date.now, disconnectTimeoutMs=300000 } = {}) {
   const db = new DatabaseSync(database);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY COLLATE NOCASE, salt TEXT NOT NULL, hash TEXT NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS friends (owner TEXT NOT NULL, friend TEXT NOT NULL, PRIMARY KEY (owner, friend))');
@@ -28,6 +28,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   };
   db.exec('CREATE TABLE IF NOT EXISTS game_history (id TEXT PRIMARY KEY, red TEXT NOT NULL, black TEXT NOT NULL, started INTEGER NOT NULL, ended INTEGER, result TEXT, duration INTEGER NOT NULL DEFAULT 0)');
   db.exec('CREATE TABLE IF NOT EXISTS game_records (game TEXT PRIMARY KEY, content TEXT NOT NULL)');
+  const historyColumns=db.prepare('PRAGMA table_info(game_history)').all().map(row=>row.name);
+  for(const column of ['red_moved','black_moved']) if(!historyColumns.includes(column)) db.exec(`ALTER TABLE game_history ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 1`);
   function saveGameRecord(game,content) {
     if(content==null) return;
     const record=content.record;
@@ -37,9 +39,14 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     db.prepare('INSERT INTO game_records VALUES (?,?) ON CONFLICT(game) DO UPDATE SET content=excluded.content').run(game.id,serialized);
   }
   function startHistory(game) {
-    db.prepare('INSERT INTO game_history(id,red,black,started) VALUES (?,?,?,?)').run(game.id,game.red,game.black,game.created);
+    db.prepare('INSERT INTO game_history(id,red,black,started,red_moved,black_moved) VALUES (?,?,?,?,0,0)').run(game.id,game.red,game.black,game.created);
   }
   function endHistory(game, result) {
+    if(!game.moved?.red || !game.moved?.black) {
+      db.prepare('DELETE FROM game_records WHERE game=?').run(game.id);
+      db.prepare('DELETE FROM game_history WHERE id=?').run(game.id);
+      return;
+    }
     const ended = now();
     db.prepare('UPDATE game_history SET ended=?,result=?,duration=? WHERE id=? AND ended IS NULL').run(ended,result,Math.max(0,ended-game.created),game.id);
   }
@@ -50,9 +57,11 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     return {opponent:profile(peer),total:rows.length,wins,losses,draws};
   }
   // A service restart cannot preserve a live peer session; retain its history honestly.
+  db.exec('DELETE FROM game_records WHERE game IN (SELECT id FROM game_history WHERE ended IS NULL AND (red_moved=0 OR black_moved=0)); DELETE FROM game_history WHERE ended IS NULL AND (red_moved=0 OR black_moved=0)');
   db.prepare("UPDATE game_history SET ended=?,result='服务中断',duration=MAX(0,?-started) WHERE ended IS NULL").run(now(),now());
   db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created INTEGER NOT NULL)');
   const sessions = new Map(), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
+  const offlineTimers=new Map();
   let closed=false;
   const nameKey = name => name.normalize('NFC').toLowerCase();
   const invisible = name => !!db.prepare('SELECT invisible FROM presence_preferences WHERE name = ?').get(name)?.invisible;
@@ -93,13 +102,13 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     game.clockTimer.unref?.();
   }
   function initClock(game) {
-    game.limitMs??=900000;game.used={red:0,black:0};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
+    game.limitMs??=900000;game.used={red:0,black:0};game.moved={red:false,black:false};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
   }
-  function closeGame(game,name) {
+  function closeGame(game,name,reason='left') {
     clearTimeout(game.nextTimer);clearTimeout(game.clockTimer); games.delete(game.id);
     endHistory(game,`${name===game.red?'red':'black'}-left`);
     const peer=game.members.find(player=>player!==name);
-    send(peer,{type:'peer-left',gameId:game.id,stats:matchup(peer,name)});
+    send(peer,{type:'peer-left',gameId:game.id,reason,stats:matchup(peer,name)});
     broadcastPresence();
   }
   function finishGame(game,result) {
@@ -182,6 +191,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
         res.write(': connected\n\n');
         streams.set(name, res);
+        clearTimeout(offlineTimers.get(name));offlineTimers.delete(name);
+        for(const g of games.values()) if(g.members.includes(name)) send(g.members.find(n=>n!==name),{type:'peer-online',gameId:g.id});
         send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ id:g.id,red:g.red,black:g.black })) });
         broadcastPresence();
         for (const invite of invites.values()) if (invite.to === name && invite.expires > now()) send(name, { type: 'invite', ...invite });
@@ -190,7 +201,13 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           if (streams.get(name) !== res) return;
           streams.delete(name);
           for (const g of games.values()) if (g.members.includes(name)) send(g.members.find(n => n !== name), { type: 'peer-offline', gameId: g.id });
-          const offlineTimer=setTimeout(()=>{ if(!closed && !streams.has(name)) for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name); },30000);
+          clearTimeout(offlineTimers.get(name));
+          const offlineTimer=setTimeout(()=>{
+            if(offlineTimers.get(name)!==offlineTimer)return;
+            offlineTimers.delete(name);
+            if(!closed && !streams.has(name)) for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name,'disconnect-timeout');
+          },disconnectTimeoutMs);
+          offlineTimers.set(name,offlineTimer);
           offlineTimer.unref();
           broadcastPresence();
         });
@@ -367,7 +384,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           if(data.ply===game.clockPly+1 && name===game[game.clockTurn]) {
             game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
             if(game.used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
-            else {game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);}
+            else {game.moved[game.clockTurn]=true;db.prepare(`UPDATE game_history SET ${game.clockTurn}_moved=1 WHERE id=?`).run(game.id);game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);}
           } else if(data.ply>game.clockPly) throw fail(409,'计时步数不一致');
         }
         json(res,200,clockState(game));return;
@@ -433,7 +450,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     for (const stream of streams.values()) stream.write(': heartbeat\n\n');
   }, 15_000);
   maintenance.unref();
-  server.on('close', () => { closed=true; clearInterval(maintenance); for (const game of games.values()) clearTimeout(game.nextTimer); db.close(); });
+  server.on('close', () => { closed=true; clearInterval(maintenance);for(const timer of offlineTimers.values())clearTimeout(timer); for (const game of games.values()) {clearTimeout(game.nextTimer);clearTimeout(game.clockTimer);} db.close(); });
   return server;
 }
 

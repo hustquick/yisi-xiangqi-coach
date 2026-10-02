@@ -7,11 +7,12 @@ try {
   for (const page of [a, b, c]) await page.addInitScript(relay => {
     const Original = window.RTCPeerConnection; window.__testPeers = [];
     const originalFetch = window.fetch;
-    window.fetch = (url, options) => {
+    window.fetch = async (url, options) => {
       if (String(url).endsWith('/events')) {
         const controller = new AbortController();
         options.signal.addEventListener('abort', () => controller.abort(), { once: true });
         window.__cutEvents = () => controller.abort();
+        while(window.__pauseEvents) {if(controller.signal.aborted)throw new DOMException('Aborted','AbortError');await new Promise(r=>setTimeout(r,50));}
         return originalFetch(url, { ...options, signal: controller.signal });
       }
       return originalFetch(url, options);
@@ -166,6 +167,10 @@ try {
   await b.waitForFunction(()=>document.activeElement?.textContent==='同意和棋');
   await b.getByRole('button',{name:'拒绝和棋',exact:true}).click();
   await a.getByRole('status').filter({hasText:'对方拒绝提和'}).waitFor();
+  await b.evaluate(()=>{window.__pauseEvents=true;window.__cutEvents();});
+  await a.locator('.duel-operations [role="alert"]').filter({hasText:'对方已断线'}).waitFor();
+  await b.evaluate(()=>{window.__pauseEvents=false;});
+  await a.locator('.duel-operations [role="alert"]').filter({hasText:'对方已断线'}).waitFor({state:'detached'});
   await a.waitForFunction(() => document.querySelector('.piece.black[aria-label="黑卒"]')?.getAttribute('style')?.includes('44.444'));
   await a.screenshot({ path: '/tmp/yisi-p2p-network-a.png', fullPage: true });
   if (!process.env.P2P_TEST_QUICK) {

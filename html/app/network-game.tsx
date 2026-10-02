@@ -49,6 +49,7 @@ export function useNetworkGame(options: {
   const [undoOffer,setUndoOffer]=useState(false);
   const [timeOffer,setTimeOffer]=useState(false);
   const [peerSelected,setPeerSelected]=useState<[number,number]|null>(null);
+  const [peerOffline,setPeerOffline]=useState(false),[linkLost,setLinkLost]=useState(false);
   const [requestFocus,setRequestFocus]=useState('');
   const operationsRef=useRef<HTMLElement|null>(null);
   useEffect(()=>{
@@ -118,7 +119,7 @@ export function useNetworkGame(options: {
   function bindChannel(channel: RTCDataChannel) {
     dc.current = channel;
     channel.onopen = () => { setStatus('对战已连接 · 正在核对局面'); channel.send(JSON.stringify({ type: 'sync', gameId: game.current?.gameId, ply: latest.current.ply, position: latest.current.position })); };
-    channel.onclose = () => { setConnected(false); setStatus('连接断开，棋局已锁定；可重连或退出'); };
+    channel.onclose = () => { setConnected(false);setLinkLost(true);setPeerSelected(null); setStatus('与对方连接已断开，棋局已锁定；可重连或退出'); };
     channel.onmessage = event => {
       try {
         if (typeof event.data !== 'string' || event.data.length > 8192) throw new Error('无效消息');
@@ -127,6 +128,7 @@ export function useNetworkGame(options: {
         if (m.type === 'sync') {
           if (m.ply !== state.ply || m.position !== state.position) throw new Error('双方局面不一致，请退出后重新邀请');
           setConnected(true); setStatus('对战已连接 · 双方局面一致');
+          setLinkLost(false);
         } else if(m.type==='selection') {
           if(m.point===null) {setPeerSelected(null);return;}
           const localSide=session.current.name===g.red?'red':'black';
@@ -154,7 +156,8 @@ export function useNetworkGame(options: {
     peer.onicecandidate = event => { if (event.candidate) void signal('candidate', event.candidate.toJSON()).catch(error => setStatus(error.message)); };
     peer.ondatachannel = event => bindChannel(event.channel);
     peer.onconnectionstatechange = () => {
-      if (['failed', 'disconnected'].includes(peer.connectionState)) { setConnected(false); setStatus('网络中断，请点重连；棋局不会自动重开'); }
+      if (['failed', 'disconnected'].includes(peer.connectionState)) { setConnected(false);setLinkLost(true);setPeerSelected(null); setStatus('与对方连接已中断，请点重连；棋局不会自动重开'); }
+      else if(peer.connectionState==='connected' && dc.current?.readyState==='open') dc.current.send(JSON.stringify({type:'sync',gameId:game.current?.gameId,ply:latest.current.ply,position:latest.current.position}));
     };
     if (initiator) {
       bindChannel(peer.createDataChannel('yisi-xiangqi', { ordered: true }));
@@ -173,6 +176,7 @@ export function useNetworkGame(options: {
     else if (m.type === 'invite') setInvitation(m);
     else if (m.type === 'declined') setStatus('对手拒绝了邀请');
     else if (m.type === 'game') {
+      setPeerOffline(false);setLinkLost(false);
       setWatching(null);
       setDrawOffer(false);setRoundEnding(false);
       setUndoOffer(false);
@@ -202,9 +206,10 @@ export function useNetworkGame(options: {
     else if (['peer-left', 'expired'].includes(m.type) && m.gameId === game.current?.gameId) {
       if(m.stats) setMatchStats(m.stats);
       clearConnection(); game.current = null; setActive(false); setInvitation(null);
-      setStatus(m.type === 'peer-left' ? '对方已退出，当前对局已结束；你已自动退出，可查看历史对局并复盘' : '对局已结束，你已自动退出');
+      setStatus(m.reason==='disconnect-timeout' ? '对方断线超过5分钟，当前对局已自动结束' : m.type === 'peer-left' ? '对方已退出，当前对局已结束；你已自动退出，可查看历史对局并复盘' : '对局已结束，你已自动退出');
       if(networkPanel.current) { networkPanel.current.open=true; networkPanel.current.scrollIntoView({behavior:'smooth',block:'center'}); }
-    } else if (m.type === 'peer-offline') setStatus('对手信令离线；已建立的直连可能仍可继续');
+    } else if (m.type === 'peer-offline' && m.gameId===game.current?.gameId) {setPeerOffline(true);setPeerSelected(null);setStatus('对方已断线，等待重连；5分钟内未恢复将结束对局');}
+    else if(m.type==='peer-online' && m.gameId===game.current?.gameId) {setPeerOffline(false);setStatus('对方已重新上线');}
     else if (m.type === 'signed-out') { events.current?.abort(); clearConnection(); game.current = null; setActive(false); setLogged(false); setStatus('账号已在其他设备登录'); }
   }
   async function subscribe() {
@@ -384,6 +389,7 @@ export function useNetworkGame(options: {
     }).catch(e=>setStatus(e.message));
   }
   const operations=active && <section ref={operationsRef} className="duel-operations" aria-label="对局操作区">
+    {(peerOffline || linkLost) && <div role="alert" className="duel-request">{peerOffline ? '对方已断线，等待重连；5分钟内未恢复将结束对局。' : '与对方连接已中断，棋局已锁定；请等待恢复或点击重连。'}{peerOffline && connected && <small> 已建立的直连仍可继续行棋。</small>}</div>}
     {active && <details><summary>对局操作</summary><div>
       {!roundEnding && <button onClick={()=>void api('/time/offer',{gameId:game.current?.gameId}).then(()=>setStatus('已申请双方各加时5分钟，等待对方同意')).catch(e=>setStatus(e.message))}>申请加时</button>}
       {!roundEnding && <><button disabled={options.ply===0} onClick={()=>void api('/undo/offer',{gameId:game.current?.gameId,content:latest.current.record?.()}).then(()=>setStatus('已申请悔棋，等待对方同意')).catch(e=>setStatus(e.message))}>悔棋</button><button onClick={()=>void api('/draw/offer',{gameId:game.current?.gameId}).then(()=>setStatus('已提和，等待对方回应')).catch(e=>setStatus(e.message))}>提和</button><button onClick={()=>{if(window.confirm('确认认输？')) void api('/resign',{gameId:game.current?.gameId,content:latest.current.record?.()}).catch(e=>setStatus(e.message));}}>认输</button></>}

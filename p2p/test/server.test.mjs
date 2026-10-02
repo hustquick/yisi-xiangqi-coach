@@ -2,6 +2,27 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSignalingServer } from '../server.mjs';
 
+test('断线提示、重新上线与断线超时自动结束',async()=>{
+  const server=createSignalingServer({database:':memory:',disconnectTimeoutMs:250});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${server.address().port}`,controllers=[];let events='';
+  const post=async(path,data,token='')=>(await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(data)})).json();
+  const connect=async user=>{const c=new AbortController();controllers.push(c);const r=await fetch(base+'/events',{headers:{Authorization:`Bearer ${user.token}`},signal:c.signal});void r.body.pipeTo(new WritableStream({write(chunk){events+=new TextDecoder().decode(chunk);}})).catch(()=>{});return c;};
+  try{
+    const a=await post('/register',{name:'offlineA',password:'1'}),b=await post('/register',{name:'offlineB',password:'1'});
+    const first=await connect(a);await connect(b);
+    const invite=await post('/invite',{to:b.name},a.token),game=await post('/respond',{id:invite.id,accept:true},b.token);
+    first.abort();await new Promise(r=>setTimeout(r,60));
+    assert.match(events,/peer-offline/);
+    const second=await connect(a);await new Promise(r=>setTimeout(r,300));
+    assert.match(events,/peer-online/);assert.equal((await post('/search',{name:b.id},a.token)).user.busy,true,'重连取消旧超时');
+    second.abort();await new Promise(r=>setTimeout(r,350));
+    assert.match(events,/disconnect-timeout/);
+    assert.equal((await post('/search',{name:a.id},b.token)).user.busy,false);
+    assert.equal((await post('/history',{},b.token)).games.some(row=>row.id===game.gameId),false);
+  }finally{controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
 test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=>{
   let clock=1000;
   const server=createSignalingServer({database:':memory:',now:()=>clock});
@@ -42,6 +63,8 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     assert.equal((await request('/watch/update',{gameId:game.gameId,content},a.token)).status,200);
     assert.deepEqual((await request('/watch',{name:a.name},w.token)).content,content);
     assert.equal((await request('/resign',{gameId:game.gameId},w.token)).status,403);
+    await request('/clock/move',{gameId:game.gameId,ply:1},a.token);
+    await request('/clock/move',{gameId:game.gameId,ply:2},b.token);
     await request('/draw/offer',{gameId:game.gameId},a.token);
     assert.equal((await request('/draw/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
     await request('/draw/respond',{gameId:game.gameId,accept:false},b.token);
@@ -51,6 +74,8 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     await new Promise(resolve=>setTimeout(resolve,5200));
     const next=(await request('/history',{},a.token)).games[0];
     assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,900000,'下一局不继承临时加时');
+    await request('/clock/move',{gameId:next.id,ply:1},b.token);
+    await request('/clock/move',{gameId:next.id,ply:2},a.token);
     clock+=100;await request('/resign',{gameId:next.id,content},a.token);
     assert.equal((await request('/history',{},a.token)).games[0].result,'red');
     assert.equal((await request('/leave',{gameId:next.id,content:{invalid:true}},a.token)).status,200);
@@ -60,7 +85,9 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     const longGame=await request('/respond',{id:longInvite.id,accept:true},b.token);
     assert.equal((await request('/clock',{gameId:longGame.gameId},a.token)).limit,2700000);
     assert.equal((await request('/time/offer',{gameId:longGame.gameId},a.token)).status,409);
+    await request('/clock/move',{gameId:longGame.gameId,ply:1},a.token);
     await request('/leave',{gameId:longGame.gameId},a.token);
+    assert.equal((await request('/history',{},a.token)).games.some(row=>row.id===longGame.gameId),false,'只有一方行棋不计入历史');
   }finally{controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 
@@ -83,6 +110,8 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     }
     const invite=await post('/invite',{to:b.name},a.token);
     const game=await post('/respond',{id:invite.id,accept:true},b.token);
+    await post('/clock/move',{gameId:game.gameId,ply:1},a.token);
+    await post('/clock/move',{gameId:game.gameId,ply:2},b.token);
     clock+=12345;
     const content={version:1,record:{title:'测试对局',pieces:[],turn:'red',moves:[]},activePly:0};
     await post('/next-game',{gameId:game.gameId,result:'red',content},a.token);
@@ -98,12 +127,14 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     assert.equal(next[0].side,'black');
     const left=await post('/leave',{gameId:next[0].id},a.token);
     assert.equal(left.stats.total,1);assert.equal(left.stats.wins,1);assert.equal(left.stats.losses,0);
-    assert.equal((await post('/history',{opponentId:b.id},a.token)).games.length,2);
+    assert.equal((await post('/history',{opponentId:b.id},a.token)).games.length,1);
     assert.equal((await post('/history',{opponentId:b.id},a.token)).games.find(row=>row.id===game.gameId).hasRecord,true);
-    assert.equal((await post('/history',{},b.token)).games[0].result,'black-left');
+    assert.equal((await post('/history',{},b.token)).games.some(row=>row.id===next[0].id),false,'无人走棋的退出不保留历史');
     clock+=1;
     const keepInvite=await post('/invite',{to:b.name,side:'black',swapSides:false},a.token);
     const keepGame=await post('/respond',{id:keepInvite.id,accept:true},b.token);
+    await post('/clock/move',{gameId:keepGame.gameId,ply:1},b.token);
+    await post('/clock/move',{gameId:keepGame.gameId,ply:2},a.token);
     assert.equal((await post('/history',{},a.token)).games[0].side,'black');
     clock+=100;
     await post('/next-game',{gameId:keepGame.gameId,result:'black'},a.token);
@@ -123,7 +154,7 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     const timedGame=(await post('/history',{},a.token)).games[0];
     clock+=900001;
     assert.equal((await post('/clock',{gameId:timedGame.id},a.token)).ended,true);
-    assert.equal((await post('/history',{},a.token)).games[0].result,'black','红方用时耗尽由服务器判负');
+    assert.equal((await post('/history',{},a.token)).games.some(row=>row.id===timedGame.id),false,'无人走棋的超时不计入历史');
     await post('/leave',{gameId:timedGame.id},a.token);
   } finally {
     controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
