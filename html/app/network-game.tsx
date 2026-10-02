@@ -289,8 +289,8 @@ export function useNetworkGame(options: {
       {searchResults.length>1 && <div aria-label="匹配用户">{searchResults.map(user=><button key={user.id} onClick={()=>setFoundFriend(user)}>{user.nickname}（ID {user.id}） · {user.online?'在线':'离线'}</button>)}</div>}
       {foundFriend && <div>{foundFriend.nickname} · ID {foundFriend.id} · {foundFriend.online ? foundFriend.busy ? '对局中' : '在线' : '离线'} <button disabled={active || !foundFriend.online || foundFriend.busy} onClick={()=>void api('/invite',{to:foundFriend.name,side:inviteSide,swapSides}).then(()=>setStatus('邀请已发出')).catch(e=>setStatus(e.message))}>邀请对战</button><button disabled={friendBusy || foundFriend.added} onClick={() => void changeFriend(foundFriend.name, true)}>{foundFriend.added ? '已添加' : '添加好友'}</button></div>}
       {users.length === 0 && <small>暂无好友</small>}
-      {users.map(u => <div key={u.name} data-friend={u.name} style={{ borderBottom: '1px solid #e4e0d6', paddingBottom: 6 }}>
-        <span>{u.nickname} · ID {u.id} · {u.online ? u.busy ? '对局中' : '在线' : '离线'}</span><div>
+      {users.map(u => <div key={u.name} data-friend={u.name} role="group" aria-label={`${u.nickname}的好友卡片`} style={{ border: '1px solid #c9d4c9', borderRadius:12,background:'#f7faf5',padding:12,display:'grid',gap:8 }}>
+        <span style={{fontWeight:600,color:'#245f43'}}>{u.nickname} · ID {u.id} · {u.online ? u.busy ? '对局中' : '在线' : '离线'}</span><div style={{display:'flex',flexWrap:'wrap',gap:6,borderTop:'1px solid #dde5d9',paddingTop:8}}>
           <button disabled={active || !u.online || u.busy} onClick={() => void api('/invite', { to: u.name, side:inviteSide,swapSides }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请对战</button>
           <button aria-expanded={friendDetails === u.name} onClick={() => setFriendDetails(friendDetails === u.name ? null : u.name)}>好友信息</button>
           <button disabled={friendBusy} onClick={() => void changeFriend(u.name, false)}>移除好友</button>
