@@ -1,6 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coachHints, xiangqiPieceLabel } from './coach-hints.ts';
+import { coachHints, coachPlan, xiangqiPieceLabel } from './coach-hints.ts';
+
+test('比较同深度候选，按合法主变化列出双方应对', () => {
+  const pieces = [{ id: 'r', name: '车', side: 'red' as const, x: 0, y: 9 }, { id: 'b', name: '车', side: 'black' as const, x: 8, y: 0 }];
+  const lines = [
+    { depth: 12, multipv: 1, score: 'cp 120', pv: 'a0a1 i9i8' },
+    { depth: 12, multipv: 2, score: 'cp 40', pv: 'a0b0' },
+    { depth: 8, multipv: 3, score: 'cp -500', pv: 'a0c0' },
+  ];
+  const plan = coachPlan(pieces, 'red', () => true, () => false, lines, uci => uci);
+  assert.ok(plan.find(p => p.title === '建议走法与计算线')?.text.includes('你：a0a1 → 对手：i9i8'));
+  const comparisons = plan.find(p => p.title === '备选与代价')?.text;
+  assert.ok(comparisons?.includes('0.80'));
+  assert.ok(!comparisons?.includes('a0c0'));
+});
+test('遇到非法主变化立即停止，不编造后续吃子', () => {
+  const pieces = [{ id: 'r', name: '车', side: 'red' as const, x: 0, y: 9 }];
+  const plan = coachPlan(pieces, 'red', () => false, () => false, [{ depth: 8, multipv: 1, score: 'cp 0', pv: 'a0a1' }], uci => uci);
+  assert.ok(!plan.some(p => p.title === '建议走法与计算线'));
+});
 
 test('使用红方中文路数、黑方数字路数，同路棋子区分前后', () => {
   const pieces = [

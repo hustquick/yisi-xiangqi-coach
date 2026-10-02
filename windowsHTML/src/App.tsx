@@ -1,7 +1,7 @@
 "use client";
 
 import { useNetworkGame } from "../../html/app/network-game";
-import { coachHints } from './coach-hints';
+import { coachPlan } from './coach-hints';
 
 import React, {
   useEffect,
@@ -2177,15 +2177,7 @@ export default function Home() {
               : analysis.detail}
           </p>
           <section aria-label="局面提示" className="global-advice">
-            <strong>现在该留意什么</strong>
-            {coachHints(pieces, turn, isLegal, isInCheck, engineState === 'ready' && candidates[0] ? {
-              ...candidates[0], reply: (() => {
-                const c = candidates[0]; if (!c.from || !c.to || !c.uciMoves?.[1]) return undefined;
-                const moving = pieces.find(p => p.x === c.from![0] && p.y === c.from![1]); if (!moving) return undefined;
-                const next = pieces.filter(p => p.x !== c.to![0] || p.y !== c.to![1]).map(p => p.id === moving.id ? { ...p, x: c.to![0], y: c.to![1] } : p);
-                return uciMoveToName(c.uciMoves[1], next);
-              })(),
-            } : undefined).map((hint, i) => <p key={i}>{hint}</p>)}
+            {coachPlan(pieces, turn, isLegal, isInCheck, engineState === 'ready' ? engineLines : [], uciMoveToName).map(hint => <div key={hint.title}><strong>{hint.title}</strong><p>{hint.text}</p></div>)}
             {engineState !== 'ready' && <p>正在计算候选着法；以上仅提示当前棋盘可核验的直接威胁，不提前评价走法优劣。</p>}
           </section>
           <div className="global-best-summary">
