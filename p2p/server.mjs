@@ -13,12 +13,13 @@ const json = (res, status, value) => {
 };
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
-// Signaling deliberately does not receive board positions or moves.
+// Live moves stay peer-to-peer; explicitly saved personal records are private account resources.
 export function createSignalingServer({ database = 'accounts.sqlite', origins = [], iceServers = [], turnSecret = '', turnHost = '', now = Date.now } = {}) {
   const db = new DatabaseSync(database);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY COLLATE NOCASE, salt TEXT NOT NULL, hash TEXT NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS friends (owner TEXT NOT NULL, friend TEXT NOT NULL, PRIMARY KEY (owner, friend))');
   db.exec('CREATE TABLE IF NOT EXISTS presence_preferences (name TEXT PRIMARY KEY, invisible INTEGER NOT NULL DEFAULT 0)');
+  db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created INTEGER NOT NULL)');
   const sessions = new Map(), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
   const nameKey = name => name.toLowerCase();
   const invisible = name => !!db.prepare('SELECT invisible FROM presence_preferences WHERE name = ?').get(name)?.invisible;
@@ -110,6 +111,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         streams.set(name, res);
         send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ ...g, members: undefined })) });
         broadcastPresence();
+        for (const invite of invites.values()) if (invite.to === name && invite.expires > now()) send(name, { type: 'invite', ...invite });
         req.on('close', () => {
           if (streams.get(name) !== res) return;
           streams.delete(name);
@@ -121,6 +123,24 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (req.method !== 'POST') throw fail(404, '接口不存在');
       rateLimit(`api:${name}`, 240);
       const data = await body(req);
+      if (path === '/records/list') {
+        json(res, 200, { records: db.prepare('SELECT id, title, created FROM records WHERE owner = ? ORDER BY created DESC').all(name) }); return;
+      }
+      if (path === '/records/get') {
+        const record = db.prepare('SELECT id, title, content, created FROM records WHERE owner = ? AND id = ?').get(name, typeof data.id === 'string' ? data.id : '');
+        if (!record) throw fail(404, '棋谱不存在');
+        json(res, 200, { ...record, content: JSON.parse(record.content) }); return;
+      }
+      if (path === '/records/save') {
+        const saved = data.content, record = saved?.record;
+        if (!Number.isInteger(saved?.version) || !record || typeof record.title !== 'string' || !record.title.trim() || record.title.length > 120 || !Array.isArray(record.pieces) || record.pieces.length > 32 || !Array.isArray(record.moves) || record.moves.length > 1000 || !['red', 'black'].includes(record.turn)) throw fail(400, '棋谱格式错误');
+        const content = JSON.stringify(saved);
+        if (Buffer.byteLength(content) > 24_000) throw fail(413, '棋谱过大，请保存到本机');
+        if (db.prepare('SELECT COUNT(*) AS count FROM records WHERE owner = ?').get(name).count >= 200) throw fail(409, '云端棋谱已达 200 份上限');
+        const id = randomUUID();
+        db.prepare('INSERT INTO records (id, owner, title, content, created) VALUES (?, ?, ?, ?, ?)').run(id, name, record.title.trim(), content, now());
+        json(res, 200, { id }); return;
+      }
       if (path === '/presence') {
         if (!['online', 'invisible'].includes(data.mode)) throw fail(400, '账户状态错误');
         db.prepare('INSERT INTO presence_preferences VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET invisible=excluded.invisible').run(name, data.mode === 'invisible' ? 1 : 0);
@@ -154,6 +174,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         const to = typeof data.to === 'string' ? nameKey(data.to) : '';
         if (to === name || !visibleOnline(to) || !streams.has(name)) throw fail(400, '好友当前不在线，或账号不能邀请自己');
         if (busy(name) || busy(to)) throw fail(409, '一方已在对局中');
+        if ([...invites.values()].some(invite => invite.from === name && invite.to === to && invite.expires > now())) throw fail(409, '邀请已发出，请等待对手回应');
         const id = randomUUID(), invite = { id, from: name, to, expires: now() + 60_000 };
         invites.set(id, invite); send(to, { type: 'invite', ...invite });
         json(res, 200, { id }); return;
@@ -191,7 +212,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   server.requestTimeout = 15_000;
   const maintenance = setInterval(() => {
     for (const [key, s] of sessions) if (s.expires <= now()) { sessions.delete(key); streams.get(s.name)?.end(); }
-    for (const [key, value] of invites) if (value.expires <= now()) invites.delete(key);
+    for (const [key, value] of invites) if (value.expires <= now()) {
+      invites.delete(key);
+      for (const player of [value.from, value.to]) send(player, { type: 'invite-expired', id: key });
+    }
     for (const [key, value] of limits) if (value.until <= now()) limits.delete(key);
     for (const [key, game] of games) if (now() - game.created > 24 * 60 * 60_000) { for (const player of game.members) send(player, { type: 'expired', gameId: key }); games.delete(key); }
     for (const stream of streams.values()) stream.write(': heartbeat\n\n');

@@ -1120,6 +1120,9 @@ export default function Home() {
   const [startingTurn, setStartingTurn] = useState<Side>("red");
   const [recordTitle, setRecordTitle] = useState("新对局");
   const [recordMessage, setRecordMessage] = useState("");
+  const [cloudRecords, setCloudRecords] = useState<Array<{ id: string; title: string; created: number }>>([]);
+  const [cloudOpen, setCloudOpen] = useState(false), [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudOwner, setCloudOwner] = useState('');
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [showRecordPanel, setShowRecordPanel] = useState(false);
   const [fenInput, setFenInput] = useState("");
@@ -1138,6 +1141,7 @@ export default function Home() {
       playMove(piece, to[0], to[1], true); return true;
     },
   });
+  const cloudAccountRef = useRef(network.account); cloudAccountRef.current = network.account;
   const [humanSide, setHumanSide] = useState<Side>("red");
   const [computerElo, setComputerElo] = useState(2100);
   const [setupBrush, setSetupBrush] = useState<SetupBrush>("move");
@@ -1747,6 +1751,33 @@ export default function Home() {
     catch (error) { setRecordMessage(error instanceof Error ? error.message : "存档载入失败。"); }
   }
 
+  async function cloudRecord(action: 'list' | 'save' | 'load' | 'download', id?: string) {
+    if (cloudBusy || !network.logged) return;
+    const owner = network.account;
+    setCloudBusy(true);
+    try {
+      if (action === 'save') {
+        const title = recordTitle === '新对局' ? `象棋对局 ${new Date().toLocaleString('zh-CN')}` : recordTitle;
+        await network.accountApi('/records/save', { content: { version: SAVED_GAME_VERSION, record: { title, pieces: startingPieces, turn: startingTurn, moves: history.map(move => ({ from: move.from, to: move.to })) }, activePly, positionScores } });
+        setRecordMessage('已保存到当前账号的云端棋谱');
+      } else if (action === 'load' || action === 'download') {
+        const saved = (await network.accountApi('/records/get', { id })).content;
+        if (cloudAccountRef.current !== owner) throw new Error('账号已切换，请重新打开云端棋谱');
+        if (saved.version !== SAVED_GAME_VERSION) throw new Error('不支持此存档版本');
+        if (action === 'load') installRecord(saved.record, saved.positionScores || {}, saved.activePly);
+        else {
+          const url = URL.createObjectURL(new Blob([JSON.stringify(saved, null, 2)], { type: 'application/json' }));
+          const link = document.createElement('a'); link.href = url; link.download = '象棋棋谱.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+      }
+      if (cloudAccountRef.current !== owner) return;
+      const result = await network.accountApi('/records/list', {});
+      if (cloudAccountRef.current !== owner) return;
+      setCloudRecords(result.records); setCloudOwner(owner); setCloudOpen(true);
+    } catch (error) { setRecordMessage(error instanceof Error ? error.message : '云端棋谱操作失败'); }
+    finally { setCloudBusy(false); }
+  }
+
   function changeDepth(depth: number) {
     if (depth === analysisDepth) return;
     selectedRequestRef.current++;
@@ -2253,6 +2284,13 @@ export default function Home() {
         <div className="record-stepper"><button onClick={() => goToPly(0)} disabled={!activePly}><i>⇤</i><span>开始</span></button><button onClick={() => goToPly(activePly - 1)} disabled={!activePly}><i>‹</i><span>上一步</span></button><button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length}><span>下一步</span><i>›</i></button><button onClick={() => goToPly(history.length)} disabled={activePly === history.length}><span>末尾</span><i>⇥</i></button></div>
         <div className="record-actions"><button className="load-record" onClick={() => setShowRecordPanel((value) => !value)}><i>↥</i> 载入棋谱</button><button className="save-record" onClick={saveGame}><i>⌑</i> 保存棋局</button></div>
         <input ref={recordFileRef} hidden type="file" accept=".xqf,.fen,.json,text/plain" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecordFile(file); }} />
+        <div className="record-actions"><button disabled={!network.logged || cloudBusy} onClick={() => void cloudRecord('save')}>保存到云端</button><button disabled={!network.logged || cloudBusy} onClick={() => { if (cloudOpen) setCloudOpen(false); else void cloudRecord('list'); }}>我的云端棋谱</button></div>
+        {!network.logged && <small>登录网络账号后可使用个人云端棋谱。</small>}
+        {cloudOpen && network.logged && cloudOwner === network.account && <section aria-label="我的云端棋谱" key={network.account}>
+          {!cloudRecords.length && <p>暂无云端棋谱</p>}
+          {cloudRecords.map(record => <div key={record.id}><span>{record.title}</span><button disabled={cloudBusy || network.active} onClick={() => void cloudRecord('load', record.id)}>载入</button><button disabled={cloudBusy} onClick={() => void cloudRecord('download', record.id)}>下载</button></div>)}
+        </section>}
+        {recordMessage && <p role="status">{recordMessage}</p>}
       </section></Collapsible>
       </div>
       </section>

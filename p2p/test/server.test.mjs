@@ -23,6 +23,14 @@ test('注册、密码验证、来源限制与对局权限', async () => {
     assert.equal((await post('/ice', {}, a.body.token)).status, 200);
     const b = await post('/register', { name: 'B', password: '2' });
     assert.equal(b.status, 200);
+    const content = { version: 1, record: { title: '个人棋谱', pieces: [], turn: 'red', moves: [] }, activePly: 0 };
+    const saved = await post('/records/save', { content }, a.body.token);
+    assert.equal(saved.status, 200);
+    assert.equal((await post('/records/list', {}, a.body.token)).body.records.length, 1);
+    assert.equal((await post('/records/list', {}, b.body.token)).body.records.length, 0);
+    assert.equal((await post('/records/get', { id: saved.body.id }, b.body.token)).status, 404, '不能读取其他账号棋谱');
+    assert.deepEqual((await post('/records/get', { id: saved.body.id }, a.body.token)).body.content, content);
+    assert.equal((await post('/records/save', { content: {} }, a.body.token)).status, 400);
     assert.equal((await post('/search', { name: 'b' }, a.body.token)).body.user.online, false);
     assert.equal((await post('/search', { name: 'missing' }, a.body.token)).body.user, null);
     assert.equal((await post('/search', { name: 'a' }, a.body.token)).body.user, null);

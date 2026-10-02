@@ -85,7 +85,13 @@ export function useNetworkGame(options: {
     }
   }
   async function handle(m: any) {
-    if (m.type === 'presence') setUsers(m.users);
+    if (m.type === 'ready') {
+      if (game.current && !m.games?.some((g: { id: string }) => g.id === game.current?.gameId)) {
+        clearConnection(); game.current = null; setActive(false); setStatus('对局已结束，棋谱留在本机');
+      } else setStatus(game.current ? connected ? '对战已连接 · 双方局面一致' : '在线连接已恢复，可重连核对局面' : '已登录 · 等待邀请');
+    }
+    else if (m.type === 'invite-expired') { setInvitation(current => current?.id === m.id ? null : current); setStatus('邀请已失效'); }
+    else if (m.type === 'presence') setUsers(m.users);
     else if (m.type === 'invite') setInvitation(m);
     else if (m.type === 'declined') setStatus('对手拒绝了邀请');
     else if (m.type === 'game') {
@@ -110,8 +116,13 @@ export function useNetworkGame(options: {
   }
   async function subscribe() {
     events.current?.abort(); const controller = new AbortController(); events.current = controller;
+    let retry = 0;
+    while (!controller.signal.aborted) {
+    try {
     const response = await fetch(session.current.url + '/events', { headers: { Authorization: `Bearer ${session.current.token}` }, signal: controller.signal });
+    if (response.status === 401) { setLogged(false); setStatus('登录已过期，请重新登录'); controller.abort(); return; }
     if (!response.ok || !response.body) throw new Error('在线连接失败，请重新登录');
+    retry = 0;
     const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
     while (!controller.signal.aborted) {
       const { done, value } = await reader.read(); if (done) break;
@@ -125,7 +136,15 @@ export function useNetworkGame(options: {
       }
       if (buffer.length > 65536) throw new Error('信令消息过大');
     }
-    if (!controller.signal.aborted) setStatus('在线服务已断开，请重新登录');
+    } catch (error) { if (controller.signal.aborted) return; }
+    if (controller.signal.aborted) return;
+    setStatus('网络暂时断开，正在恢复在线连接…');
+    await new Promise<void>(resolve => {
+      const finish = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', finish); resolve(); };
+      const timer = setTimeout(finish, Math.min(30_000, 1000 * 2 ** Math.min(retry++, 5)));
+      controller.signal.addEventListener('abort', finish, { once: true });
+    });
+    }
   }
   async function login(register: boolean) {
     if (authBusy) return;
@@ -133,7 +152,7 @@ export function useNetworkGame(options: {
     try {
       if (active) throw new Error('请先退出当前对局');
       if (register && password !== confirmPassword) throw new Error('两次输入的密码不一致，请重新确认');
-      if (window.location.protocol === 'file:') throw new Error('当前打开的是离线文件，不能注册或登录。请通过网页服务打开；跨电脑联网入口尚未部署完成。');
+      if (window.location.protocol === 'file:') throw new Error('当前打开的是离线文件，不能注册或登录。请从已发布的在线网页进入网络对战。');
       // Deployment configuration belongs to the application, never to the player UI.
       const configured = document.querySelector<HTMLMetaElement>('meta[name="yisi-network-endpoint"]')?.content;
       const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
@@ -247,5 +266,5 @@ export function useNetworkGame(options: {
     {invitation && !active && <div>{invitation.from} 邀请你对战 <button onClick={() => void api('/respond', { id: invitation.id, accept: true }).catch(e => setStatus(e.message))}>接受</button> <button onClick={() => void api('/respond', { id: invitation.id, accept: false }).then(() => setInvitation(null)).catch(e => setStatus(e.message))}>拒绝</button></div>}
     {active && <div><button disabled={connected} onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button> <button onClick={() => void leave()}>退出对局</button></div>}
   </div></details>;
-  return { active, side, connected, sendMove, panel };
+  return { active, side, connected, sendMove, panel, logged, account: logged ? session.current.name : '', accountApi: api };
 }

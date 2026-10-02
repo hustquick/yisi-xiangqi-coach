@@ -4,7 +4,25 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const errors = [];
 try {
   const a = await browser.newPage(), b = await browser.newPage();
-  await a.addInitScript(() => { const Original = window.RTCPeerConnection; window.__testPeers = []; window.RTCPeerConnection = class extends Original { constructor(...args) { super(...args); window.__testPeers.push(this); } }; });
+  for (const page of [a, b]) await page.addInitScript(relay => {
+    const Original = window.RTCPeerConnection; window.__testPeers = [];
+    const originalFetch = window.fetch;
+    window.fetch = (url, options) => {
+      if (String(url).endsWith('/events')) {
+        const controller = new AbortController();
+        options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+        window.__cutEvents = () => controller.abort();
+        return originalFetch(url, { ...options, signal: controller.signal });
+      }
+      return originalFetch(url, options);
+    };
+    window.RTCPeerConnection = class extends Original {
+      constructor(config, ...args) {
+        super(relay ? { ...config, iceTransportPolicy: 'relay' } : config, ...args);
+        window.__testPeers.push(this);
+      }
+    };
+  }, process.env.P2P_TEST_RELAY === '1');
   for (const page of [a, b]) page.on('pageerror', e => errors.push(e.message));
   const stamp = Date.now();
   for (const [page, suffix] of [[a, 'a'], [b, 'b']]) {
@@ -30,6 +48,18 @@ try {
   assert.equal(await b.getByRole('button', { name: '账户信息', exact: true }).count(), 0);
   assert.equal(await b.getByRole('button', { name: '恢复在线', exact: true }).count(), 0);
   assert.equal(await b.getByRole('button', { name: '好友列表', exact: true }).count(), 1);
+  await a.getByText('棋谱与存档', { exact: true }).click();
+  await a.getByRole('button', { name: '保存到云端', exact: true }).click();
+  const records = a.getByRole('region', { name: '我的云端棋谱' });
+  await records.getByRole('button', { name: '载入', exact: true }).waitFor();
+  const download = a.waitForEvent('download');
+  await records.getByRole('button', { name: '下载', exact: true }).click();
+  assert.equal((await download).suggestedFilename(), '象棋棋谱.json');
+  await records.getByRole('button', { name: '载入', exact: true }).click();
+  await a.getByRole('status').filter({ hasText: '已载入' }).waitFor();
+  await b.getByText('棋谱与存档', { exact: true }).click();
+  await b.getByRole('button', { name: '我的云端棋谱', exact: true }).click();
+  await b.getByText('暂无云端棋谱', { exact: true }).waitFor();
   await a.getByRole('button', { name: /^好友列表/ }).click();
   await a.getByLabel('搜索好友账号', { exact: true }).fill(`test${stamp}b`);
   await a.getByRole('button', { name: '搜索', exact: true }).click();
@@ -50,8 +80,26 @@ try {
   await b.getByRole('button', { name: '登录', exact: true }).click();
   await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
   await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  await a.getByRole('status').filter({ hasText: '邀请已发出，等待对手接受' }).waitFor();
+  await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  await a.getByRole('status').filter({ hasText: '邀请已发出，请等待对手回应' }).waitFor();
+  await b.context().setOffline(true);
+  await b.evaluate(() => window.__cutEvents());
+  await b.getByRole('status').filter({ hasText: '正在恢复在线连接' }).waitFor();
+  await b.context().setOffline(false);
+  await a.getByRole('status').filter({ hasText: '邀请已失效' }).waitFor({ timeout: 80_000 });
+  await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
   await b.getByRole('button', { name: '接受', exact: true }).click();
   for (const page of [a, b]) await page.getByRole('status').filter({ hasText: '双方局面一致' }).waitFor({ timeout: 30000 });
+  if (process.env.P2P_TEST_RELAY === '1') {
+    for (const page of [a, b]) assert.equal(await page.evaluate(async () => {
+      const stats = await window.__testPeers.at(-1).getStats();
+      for (const entry of stats.values()) if (entry.type === 'transport' && entry.selectedCandidatePairId) {
+        const pair = stats.get(entry.selectedCandidatePairId);
+        return stats.get(pair.localCandidateId)?.candidateType;
+      }
+    }), 'relay', '必须真实使用云端 TURN 中继');
+  }
   async function move(page, label, to) {
     await page.getByRole('button', { name: label, exact: true }).first().click();
     await page.getByRole('button', { name: `棋盘 ${to}`, exact: true }).click({ force: true });
