@@ -1,5 +1,7 @@
 "use client";
 
+import { useNetworkGame } from "../../html/app/network-game";
+
 import React, {
   useEffect,
   useMemo,
@@ -1127,6 +1129,15 @@ export default function Home() {
   const [activePly, setActivePly] = useState(0);
   const [analysisDepth, setAnalysisDepth] = useState<number>(8);
   const [gameMode, setGameMode] = useState<GameMode>("local");
+  const network = useNetworkGame({
+    position: positionFen(pieces, turn, activePly), ply: activePly, turn,
+    start: () => { setGameMode("local"); reset(true); },
+    receive: (from, to) => {
+      const piece = pieces.find(p => p.x === from[0] && p.y === from[1]);
+      if (!piece || piece.side !== turn || outcome || !isLegal(piece, to[0], to[1], pieces)) return false;
+      playMove(piece, to[0], to[1], true); return true;
+    },
+  });
   const [humanSide, setHumanSide] = useState<Side>("red");
   const [computerElo, setComputerElo] = useState(2100);
   const [setupBrush, setSetupBrush] = useState<SetupBrush>("move");
@@ -1555,8 +1566,9 @@ export default function Home() {
     playMove(selectedPiece, x, y);
   }
 
-  function playMove(piece: Piece, x: number, y: number) {
+  function playMove(piece: Piece, x: number, y: number, remote = false) {
     if (outcome || piece.side !== turn || !isLegal(piece, x, y, pieces)) return;
+    if (network.active && !remote && !network.sendMove([piece.x, piece.y], [x, y])) return;
     setVariationPreview(null);
     setPreviewedCandidateMove(null);
     setTimelinePreviewPly(null);
@@ -1651,6 +1663,7 @@ export default function Home() {
   }
 
   function goToPly(ply: number) {
+    if (network.active) return;
     const targetPly = Math.max(0, Math.min(history.length, ply));
     setTimelinePreviewPly(null);
     setVariationPreview(null);
@@ -1676,7 +1689,8 @@ export default function Home() {
     goToPly(activePly - 1);
   }
 
-  function reset() {
+  function reset(force?: unknown) {
+    if (network.active && force !== true) return;
     requestRef.current++;
     selectedRequestRef.current++;
     workerRef.current?.postMessage({ type: "stop" });
@@ -1698,6 +1712,7 @@ export default function Home() {
   }
 
   function installRecord(imported: { title: string; pieces: Piece[]; turn: Side; moves: Array<{ from: [number, number]; to: [number, number] }> }, scores: Record<number, number> = {}, requestedPly?: number) {
+    if (network.active) throw new Error("请先退出网络对局，再载入棋谱。");
     let position = imported.pieces.map((piece) => ({ ...piece })); const nextHistory: Move[] = [];
     for (const coordinates of imported.moves) {
       const moving = position.find((piece) => piece.x === coordinates.from[0] && piece.y === coordinates.from[1]);
@@ -1742,6 +1757,7 @@ export default function Home() {
   }
 
   function changeGameMode(mode: GameMode) {
+    if (network.active) return;
     if (mode === gameMode) return;
     requestRef.current++;
     selectedRequestRef.current++;
@@ -2224,6 +2240,7 @@ export default function Home() {
         startingPieces={startingPieces}
       /></Collapsible>
 
+      {network.panel}
       <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
         <div className="game-mode-bar">{(["local", "computer", "setup"] as GameMode[]).map((mode) => <button key={mode} className={gameMode === mode ? "active" : ""} onClick={() => changeGameMode(mode)}>{mode === "local" ? "双人对弈" : mode === "computer" ? "人机对战" : "摆盘"}</button>)}</div>
         {gameMode === "computer" && <div className="computer-options"><button className="side-choice" onClick={() => { setHumanSide((side) => side === "red" ? "black" : "red"); aiPositionRef.current=""; }}>我执{humanSide === "red" ? "红" : "黑"}</button><label className="level-choice"><span>电脑等级</span><select value={computerElo} onChange={(event) => {setComputerElo(Number(event.target.value));aiPositionRef.current="";}}>{[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name,elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}</select></label></div>}

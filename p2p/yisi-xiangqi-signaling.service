@@ -1,0 +1,21 @@
+[Unit]
+Description=Yisi Xiangqi account and signaling service
+After=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/yisi-xiangqi-p2p
+EnvironmentFile=/home/ubuntu/projects/yisi-xiangqi-p2p/service.env
+ExecStart=/home/ubuntu/projects/yisi-xiangqi-p2p/runtime/node-v22.22.0-linux-arm64/bin/node server.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/projects/yisi-xiangqi-p2p
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

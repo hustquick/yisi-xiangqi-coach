@@ -1,0 +1,19 @@
+[Unit]
+Description=Yisi Xiangqi authenticated TURN relay
+After=network-online.target
+
+[Service]
+User=turnserver
+Group=turnserver
+ExecStart=/usr/bin/turnserver -c /etc/yisi-xiangqi-turn.conf --log-file=stdout --pidfile=/run/yisi-xiangqi-turn/turn.pid
+RuntimeDirectory=yisi-xiangqi-turn
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

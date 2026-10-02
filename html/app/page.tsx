@@ -1,5 +1,7 @@
 "use client";
 
+import { useNetworkGame } from "./network-game";
+
 import {
   useEffect,
   useMemo,
@@ -1140,6 +1142,15 @@ export default function Home() {
   // available in the analysis settings.
   const [analysisDepth, setAnalysisDepth] = useState<number>(8);
   const [gameMode, setGameMode] = useState<GameMode>("local");
+  const network = useNetworkGame({
+    position: positionFen(pieces, turn, activePly), ply: activePly, turn,
+    start: () => { setGameMode("local"); reset(true); },
+    receive: (from, to) => {
+      const piece = pieces.find(p => p.x === from[0] && p.y === from[1]);
+      if (!piece || piece.side !== turn || outcome || !isLegal(piece, to[0], to[1], pieces)) return false;
+      playMove(piece, to[0], to[1], true); return true;
+    },
+  });
   const [humanSide, setHumanSide] = useState<Side>("red");
   const [computerElo, setComputerElo] = useState(2100);
   const [setupBrush, setSetupBrush] = useState<SetupBrush>("move");
@@ -1588,8 +1599,9 @@ export default function Home() {
     playMove(selectedPiece, x, y);
   }
 
-  function playMove(piece: Piece, x: number, y: number) {
+  function playMove(piece: Piece, x: number, y: number, remote = false) {
     if (outcome || piece.side !== turn || !isLegal(piece, x, y, pieces)) return;
+    if (network.active && !remote && !network.sendMove([piece.x, piece.y], [x, y])) return;
     setVariationPreview(null);
     setPreviewedCandidateMove(null);
     setTimelinePreviewPly(null);
@@ -1689,6 +1701,7 @@ export default function Home() {
   }
 
   function goToPly(ply: number) {
+    if (network.active) return;
     const targetPly = Math.max(0, Math.min(history.length, ply));
     setTimelinePreviewPly(null);
     setVariationPreview(null);
@@ -1714,7 +1727,8 @@ export default function Home() {
     goToPly(activePly - 1);
   }
 
-  function reset() {
+  function reset(force?: unknown) {
+    if (network.active && force !== true) return;
     requestRef.current++;
     selectedRequestRef.current++;
     workerRef.current?.postMessage({ type: "stop" });
@@ -1752,6 +1766,7 @@ export default function Home() {
     scores: Record<number, number> = {},
     requestedPly?: number,
   ) {
+    if (network.active) throw new Error("请先退出网络对局，再载入棋谱。");
     let position = imported.pieces.map((piece) => ({ ...piece }));
     const importedHistory: Move[] = [];
     for (const coordinates of imported.moves) {
@@ -1843,6 +1858,7 @@ export default function Home() {
   }
 
   function changeGameMode(mode: GameMode) {
+    if (network.active) return;
     if (mode === gameMode) return;
     requestRef.current++;
     selectedRequestRef.current++;
@@ -2331,6 +2347,7 @@ export default function Home() {
         startingPieces={startingPieces}
       /></Collapsible>
 
+      {network.panel}
       <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
         <div className="game-mode-bar">
           {(["local", "computer", "setup"] as GameMode[]).map((mode) => (

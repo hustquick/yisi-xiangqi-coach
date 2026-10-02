@@ -8,4 +8,5 @@ await build({
   platform: 'browser', target: ['es2020'], jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"production"' },
   nodePaths: [resolve(import.meta.dirname, 'node_modules')],
+  alias: { react: resolve(import.meta.dirname, 'node_modules/react'), 'react-dom': resolve(import.meta.dirname, 'node_modules/react-dom') },
 });

@@ -1,5 +1,9 @@
 # 弈思 · 象棋思考教练
 
+## 网络对战联调版
+
+网页客户端新增账号注册 / 登录、在线邀请、WebRTC 双人对战、断线重连与双方走棋校验。账号与信令服务、中继服务已部署到自有 Oracle 云主机；目前通过本机 SSH 隧道完成联调，公网 HTTPS 与 Oracle 中继端口放行仍待配置。**现有 Android APK / iOS 原生应用尚不包含网络对战，不将其标作已完成。** 运行方式、验证范围和部署边界见 [网络对战说明](p2p/README.md)。
+
 ## 最新版本下载
 
 无需自行编译，前往 [最新发布页](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest) 下载：
