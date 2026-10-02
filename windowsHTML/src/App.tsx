@@ -2119,6 +2119,8 @@ export default function Home() {
                 : setupBrush === "erase"
                   ? "摆盘：点击棋子即可删除"
                   : `摆盘：点击棋盘放置${setupBrush.side === "red" ? "红" : "黑"}${setupBrush.name}`
+              : network.active
+                ? `${turn === "red" ? "红" : "黑"}方走棋 · 网络公平对战`
               : gameMode === "computer" && turn !== humanSide
                 ? "电脑正在计算并将自动走出首选着法"
                 : variationPreview
@@ -2131,7 +2133,7 @@ export default function Home() {
                         : `已选中${selectedPiece.name}：绿色为本子首选，蓝色为其他合法落点`
                       : activePly < history.length
                         ? `正在查看第 ${activePly} 步后的历史局面；现在落子会替换后续 ${history.length - activePly} 步`
-                        : engineState === "thinking"
+                        : !network.active && engineConnected && engineState === "thinking"
                           ? `皮卡鱼思考中，仍可继续行棋；落子后自动改算${turn === "red" ? "黑" : "红"}方应着`
                           : `${turn === "red" ? "红" : "黑"}方走棋 · 点击棋子开始`}
           </div>
@@ -2292,12 +2294,12 @@ export default function Home() {
       /></Collapsible>}
 
       {network.panel}
-      <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
-        <div className="game-mode-bar">{(["local", "computer", "setup"] as GameMode[]).map((mode) => <button key={mode} className={gameMode === mode ? "active" : ""} onClick={() => changeGameMode(mode)}>{mode === "local" ? "双人对弈" : mode === "computer" ? "人机对战" : "摆盘"}</button>)}</div>
+      {!network.active && <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
+        <div className="game-mode-bar">{(["local", "computer", "setup"] as GameMode[]).map((mode) => <button key={mode} className={gameMode === mode ? "active" : ""} onClick={() => changeGameMode(mode)}>{mode === "local" ? "对弈分析" : mode === "computer" ? "人机对战" : "摆盘"}</button>)}</div>
         {gameMode === "computer" && <div className="computer-options"><button className="side-choice" onClick={() => { setHumanSide((side) => side === "red" ? "black" : "red"); aiPositionRef.current=""; }}>我执{humanSide === "red" ? "红" : "黑"}</button><label className="level-choice"><span>电脑等级</span><select value={computerElo} onChange={(event) => {setComputerElo(Number(event.target.value));aiPositionRef.current="";}}>{[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name,elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}</select></label></div>}
         <div className="depth-setting" style={{display:'grid',gap:8}}><div><strong>分析深度</strong><small>修改后从当前局面重新计算</small></div><div className="depth-options" style={{display:'flex',flexWrap:'wrap'}}>{DEPTH_OPTIONS.map((depth) => <button key={depth} className={depth === analysisDepth ? "active" : ""} onClick={() => changeDepth(depth)} aria-pressed={depth === analysisDepth}>{depth}</button>)}</div></div>
         {gameMode === "setup" && <div className="setup-panel"><div className="setup-actions"><button className={setupBrush === "move" ? "active" : ""} onClick={() => setSetupBrush("move")}>移动</button><button className={setupBrush === "erase" ? "active" : ""} onClick={() => setSetupBrush("erase")}>删除</button><button onClick={() => setTurn((side) => side === "red" ? "black" : "red")}>{turn === "red" ? "红方先行" : "黑方先行"}</button><button className="finish" onClick={finishSetup}>完成摆盘</button></div>{(["red", "black"] as Side[]).map((side) => <div className={`setup-pieces ${side}`} key={side}><span>{side === "red" ? "红方" : "黑方"}</span>{setupPieces[side].map((name) => {const active=typeof setupBrush === "object" && setupBrush.side === side && setupBrush.name === name;return <button key={name} className={active ? "active" : ""} onClick={() => setSetupBrush({side,name})}>{name}</button>;})}</div>)}</div>}
-      </section></Collapsible>
+      </section></Collapsible>}
 
       <Collapsible title="棋谱与存档"><section className="record-toolbar panel">
         <div className="record-summary"><span>谱</span><div><small>当前棋局</small><strong>{recordTitle}</strong></div><em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em></div>
