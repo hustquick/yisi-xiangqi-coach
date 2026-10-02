@@ -1,6 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coachHints } from './coach-hints.ts';
+import { coachHints, xiangqiPieceLabel } from './coach-hints.ts';
+
+test('使用红方中文路数、黑方数字路数，同路棋子区分前后', () => {
+  const pieces = [
+    { id: 'm', name: '马', side: 'black' as const, x: 7, y: 0 },
+    { id: 'p', name: '卒', side: 'black' as const, x: 4, y: 3 },
+    { id: 'r1', name: '车', side: 'red' as const, x: 0, y: 7 },
+    { id: 'r2', name: '车', side: 'red' as const, x: 0, y: 9 },
+  ];
+  assert.equal(xiangqiPieceLabel(pieces[0], pieces), '黑马8');
+  assert.equal(xiangqiPieceLabel(pieces[1], pieces), '黑卒5');
+  assert.equal(xiangqiPieceLabel(pieces[2], pieces), '红前车（九路）');
+  assert.equal(xiangqiPieceLabel(pieces[3], pieces), '红后车（九路）');
+});
 
 test('提示将军、受攻击与具体候选，不声称必然丢子', () => {
   const pieces = [{ id: 'r', name: '车', side: 'red' as const, x: 0, y: 9 }, { id: 'b', name: '马', side: 'black' as const, x: 0, y: 7 }];
