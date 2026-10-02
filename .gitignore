@@ -1,4 +1,5 @@
 .DS_Store
+/windowsHTML/node_modules/
 
 # HTML dependencies and generated output
 /html/node_modules/

@@ -1,5 +1,15 @@
 # 弈思 · 象棋思考教练
 
+## 最新版本下载
+
+无需自行编译，前往 [最新发布页](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest) 下载：
+
+- [Android 安装包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-android-arm64.apk)：Android 8.0 及以上、ARM64，已签名的 Debug 侧载版，内置离线引擎。
+- [离线 HTML 完整包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-windows-html.zip)：完整解压后，用 Edge 或 Chrome 打开 `windowsHTML/index.html`，无需服务器或联网。
+- 发布页同时提供 `SHA256SUMS.txt`、对应源码包和构建说明。
+
+安装 APK 时需允许下载所用应用“安装未知应用”。HTML 请勿只复制 `index.html`，也不要在压缩包预览中直接打开。更新前建议先导出重要棋谱。
+
 ## 界面设计原则：任务情境决定显著性
 
 > 在任一任务阶段，功能的可见性、位置和视觉显著程度，应当与该功能在当前任务情境下的普遍需要程度相匹配；当前阶段普遍需要的功能进入前景，已经完成使命或暂时无关的功能退出前景，但仍保持必要的可恢复性。
