@@ -1,5 +1,6 @@
 .DS_Store
 /windowsHTML/node_modules/
+/p2p/.pages-dist/
 
 # HTML dependencies and generated output
 /html/node_modules/
