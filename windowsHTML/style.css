@@ -67,6 +67,11 @@
 @media(max-width:760px){.variation-playback{top:7px;gap:6px;padding:6px 8px}.variation-playback span{display:none}.timeline-preview{right:5px;top:5px;width:104px;padding:6px}.mini-board{width:90px}.timeline-preview>span{display:none}}
 
 .board-wrap{scroll-margin-top:12px}
+/* Keep all functional modules aligned with the board at every viewport size. */
+.workspace{display:grid!important;grid-template-columns:minmax(0,1fr)!important;max-width:768px;width:100%;gap:18px;align-items:stretch}
+.workspace>.board-wrap,.workspace>.coach-sidebar{width:100%;min-width:0}
+.coach-sidebar>.collapsible-module{width:100%;max-width:none;margin:12px 0}
+.coach-sidebar .collapsible-content>.panel,.coach-sidebar .situation-panel{width:100%!important;max-width:none!important;margin-left:0!important;margin-right:0!important}
 .candidate.previewing{border-color:#4f8768;background:#e8f4eb;box-shadow:inset 3px 0 0 #2b6d4c}
 .move-red,.move-red>strong{color:#b52f26!important}.move-black,.move-black>strong{color:#171b18!important}
 .record-toolbar{max-width:1200px;margin:16px auto;display:flex;align-items:center;gap:12px;padding:12px 16px}.record-toolbar>small{color:#999}.record-toolbar>.record-stepper{display:flex;gap:4px;margin:auto}.record-toolbar button,.record-loader button{border:1px solid #cfc4b4;background:#fffdf8;padding:7px 10px;color:#51493f}.record-toolbar>div:last-child{display:flex;gap:6px}.record-loader{max-width:1200px;margin:-8px auto 16px;display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center}.record-loader textarea{height:55px}.record-message{position:fixed;left:50%;top:82px;transform:translateX(-50%);z-index:30;background:#244f3e;color:#fff;padding:10px 14px;border-radius:6px}.record-message button{border:0;background:transparent;color:#fff;margin-left:12px}@media(max-width:760px){.record-toolbar{margin:10px 14px;flex-wrap:wrap}.record-stepper{order:3;width:100%}.record-stepper button{flex:1;padding:6px 3px}.record-loader{margin:0 14px 12px;grid-template-columns:1fr}.board-top{grid-template-columns:1fr auto auto 1fr;gap:4px}.perspective-button{font-size:0}.perspective-button:first-letter{font-size:15px}}

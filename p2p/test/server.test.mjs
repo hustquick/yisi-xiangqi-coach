@@ -2,6 +2,62 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSignalingServer } from '../server.mjs';
 
+test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=>{
+  let clock=1000;
+  const server=createSignalingServer({database:':memory:',now:()=>clock});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${server.address().port}`,controllers=[];
+  const request=async(path,data,token='')=>{
+    const response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(data)});
+    return {status:response.status,...await response.json()};
+  };
+  try{
+    const a=await request('/register',{name:'playerA',password:'1'}),b=await request('/register',{name:'playerB',password:'1'}),w=await request('/register',{name:'watcher',password:'1'});
+    for(const user of [a,b,w]){const controller=new AbortController();controllers.push(controller);const response=await fetch(base+'/events',{headers:{Authorization:`Bearer ${user.token}`},signal:controller.signal});void response.body.pipeTo(new WritableStream({write(){}})).catch(()=>{});}
+    const invite=await request('/invite',{to:b.name},a.token);
+    const game=await request('/respond',{id:invite.id,accept:true},b.token);
+    clock+=2000;
+    const firstClock=await request('/clock',{gameId:game.gameId},a.token);
+    assert.equal(firstClock.limit,600000);assert.equal(firstClock.used.red,2000);assert.equal(firstClock.used.black,0);
+    assert.equal((await request('/clock/move',{gameId:game.gameId,ply:1},b.token)).status,409);
+    await request('/clock/move',{gameId:game.gameId,ply:1},a.token);
+    clock+=3000;
+    const secondClock=await request('/clock',{gameId:game.gameId},b.token);
+    assert.equal(secondClock.used.red,2000);assert.equal(secondClock.used.black,3000);
+    await request('/time/offer',{gameId:game.gameId},a.token);
+    assert.equal((await request('/time/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
+    await request('/time/respond',{gameId:game.gameId,accept:false},b.token);
+    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,600000);
+    await request('/time/offer',{gameId:game.gameId},a.token);await request('/time/respond',{gameId:game.gameId,accept:true},b.token);
+    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,900000);
+    const undoContent={version:1,record:{title:'悔棋测试',pieces:[],turn:'red',moves:[{from:[0,6],to:[0,5]}]}};
+    await request('/undo/offer',{gameId:game.gameId,content:undoContent},a.token);
+    assert.equal((await request('/undo/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
+    await request('/undo/respond',{gameId:game.gameId,accept:true},b.token);
+    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).turn,'red');
+    assert.equal((await request('/watch',{name:a.name},w.token)).status,403);
+    await request('/friends/add',{name:a.name},w.token);await request('/friends/respond',{name:w.name,accept:true},a.token);
+    const content={version:1,record:{title:'观战测试',pieces:[],turn:'red',moves:[]},activePly:0};
+    assert.equal((await request('/watch/update',{gameId:game.gameId,content},a.token)).status,200);
+    assert.deepEqual((await request('/watch',{name:a.name},w.token)).content,content);
+    assert.equal((await request('/resign',{gameId:game.gameId},w.token)).status,403);
+    await request('/draw/offer',{gameId:game.gameId},a.token);
+    assert.equal((await request('/draw/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
+    await request('/draw/respond',{gameId:game.gameId,accept:false},b.token);
+    await request('/draw/offer',{gameId:game.gameId},a.token);
+    clock+=100;await request('/draw/respond',{gameId:game.gameId,accept:true,content},b.token);
+    assert.equal((await request('/history',{},a.token)).games[0].result,'draw');
+    await new Promise(resolve=>setTimeout(resolve,5200));
+    const next=(await request('/history',{},a.token)).games[0];
+    assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,600000,'下一局不继承临时加时');
+    clock+=100;await request('/resign',{gameId:next.id,content},a.token);
+    assert.equal((await request('/history',{},a.token)).games[0].result,'red');
+    assert.equal((await request('/leave',{gameId:next.id,content:{invalid:true}},a.token)).status,200);
+    assert.equal((await request('/search',{name:b.id},w.token)).user.busy,false);
+    assert.equal((await request('/watch',{name:a.name},w.token)).status,404);
+  }finally{controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
 test('非好友邀请、云端用时记录和自动交换先后手', async () => {
   let clock=100000;
   const server=createSignalingServer({database:':memory:',now:()=>clock});
@@ -58,6 +114,11 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     assert.equal(duplicate.status,409);
     assert.match((await duplicate.json()).error,/账号已存在/);
     assert.equal((await post('/search',{name:'棋友'},a.token)).users[0].id,chinese.id);
+    const timedGame=(await post('/history',{},a.token)).games[0];
+    clock+=600001;
+    assert.equal((await post('/clock',{gameId:timedGame.id},a.token)).ended,true);
+    assert.equal((await post('/history',{},a.token)).games[0].result,'black','红方用时耗尽由服务器判负');
+    await post('/leave',{gameId:timedGame.id},a.token);
   } finally {
     controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   }

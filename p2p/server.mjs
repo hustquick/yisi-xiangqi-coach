@@ -80,6 +80,42 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   function friendRequests(name) { return db.prepare('SELECT sender FROM friend_requests WHERE recipient=? ORDER BY created').all(name).map(row=>({name:row.sender,...profile(row.sender)})); }
   function broadcastPresence() { for (const name of streams.keys()) send(name, { type: 'presence', users: friendList(name), requests:friendRequests(name) }); }
   function busy(name) { return [...games.values()].some(g => g.members.includes(name)); }
+  function clockState(game) {
+    const used={...game.used};
+    if(!game.result) used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
+    return {limit:game.limitMs,used,turn:game.clockTurn,ended:!!game.result};
+  }
+  function armClock(game) {
+    clearTimeout(game.clockTimer);
+    game.clockTimer=setTimeout(()=>{
+      if(games.get(game.id)===game && !game.result) finishGame(game,game.clockTurn==='red'?'black':'red');
+    },Math.max(1,game.limitMs-game.used[game.clockTurn]));
+    game.clockTimer.unref?.();
+  }
+  function initClock(game) {
+    game.limitMs??=600000;game.used={red:0,black:0};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
+  }
+  function closeGame(game,name) {
+    clearTimeout(game.nextTimer);clearTimeout(game.clockTimer); games.delete(game.id);
+    endHistory(game,`${name===game.red?'red':'black'}-left`);
+    const peer=game.members.find(player=>player!==name);
+    send(peer,{type:'peer-left',gameId:game.id,stats:matchup(peer,name)});
+    broadcastPresence();
+  }
+  function finishGame(game,result) {
+    if(game.result) return;
+    game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);clearTimeout(game.clockTimer);
+    game.result=result;endHistory(game,result);
+    for(const player of game.members) send(player,{type:'round-finished',gameId:game.id,result,stats:matchup(player,game.members.find(n=>n!==player))});
+    game.nextTimer=setTimeout(()=>{
+      if(games.get(game.id)!==game) return;
+      if(!game.members.every(player=>streams.has(player))) {closeGame(game,game.members.find(player=>!streams.has(player)));return;}
+      games.delete(game.id);
+      const next={id:randomUUID(),members:game.members,red:game.swapSides?game.black:game.red,black:game.swapSides?game.red:game.black,swapSides:game.swapSides,created:now()};
+      next.limitMs=game.baseLimitMs??game.limitMs;games.set(next.id,next);initClock(next);next.baseLimitMs=next.limitMs;startHistory(next);
+      for(const player of next.members) send(player,{type:'game',gameId:next.id,red:next.red,black:next.black,initiator:player===next.red});
+    },5000);
+  }
   function rateLimit(key, max, window = 60_000) {
     const entry = limits.get(key);
     if (!entry || entry.until <= now()) { limits.set(key, { count: 1, until: now() + window }); return; }
@@ -132,6 +168,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           if (!user || !timingSafeEqual(actual, Buffer.from(user.hash, 'hex'))) throw fail(401, '账号或密码错误');
         }
         // One login per account, preventing competing clients from impersonating a side.
+        for(const game of [...games.values()]) if(game.members.includes(canonical)) closeGame(game,canonical);
         for (const [key, session] of sessions) if (session.name === canonical) sessions.delete(key);
         const previous = streams.get(canonical);
         if (previous) { send(canonical, { type: 'signed-out' }); previous.end(); streams.delete(canonical); }
@@ -153,6 +190,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           if (streams.get(name) !== res) return;
           streams.delete(name);
           for (const g of games.values()) if (g.members.includes(name)) send(g.members.find(n => n !== name), { type: 'peer-offline', gameId: g.id });
+          const offlineTimer=setTimeout(()=>{ if(!closed && !streams.has(name)) for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name); },30000);
+          offlineTimer.unref();
           broadcastPresence();
         });
         return;
@@ -160,6 +199,14 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (req.method !== 'POST') throw fail(404, '接口不存在');
       rateLimit(`api:${name}`, 240);
       const data = await body(req);
+      if(path==='/watch') {
+        const friend=typeof data.name==='string'?nameKey(data.name):'';
+        if(busy(name)) throw fail(409,'请先退出自己的对局');
+        if(!visibleOnline(friend) || !db.prepare('SELECT 1 FROM friends WHERE owner=? AND friend=?').get(name,friend)) throw fail(403,'只能观看在线好友的对局');
+        const game=[...games.values()].find(g=>g.members.includes(friend));
+        if(!game) throw fail(404,'好友对局已结束');
+        json(res,200,{gameId:game.id,content:game.snapshot??null});return;
+      }
       if(path==='/history/get') {
         const row=db.prepare('SELECT r.content FROM game_records r JOIN game_history h ON h.id=r.game WHERE h.id=? AND (h.red=? OR h.black=?) AND h.ended IS NOT NULL').get(typeof data.id==='string'?data.id:'',name,name);
         if(!row) throw fail(404,'该对局暂无完整棋谱');
@@ -243,6 +290,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       }
       if (path === '/ice') { json(res, 200, { iceServers: connectionServers(name) }); return; }
       if (path === '/logout') {
+        for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name);
         for (const [key, s] of sessions) if (s.name === name) sessions.delete(key);
         streams.get(name)?.end(); json(res, 200, { ok: true }); return;
       }
@@ -251,12 +299,14 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         const side=data.side??'red';
         if(!['red','black'].includes(side)) throw fail(400,'请选择红方或黑方');
         const swapSides=data.swapSides??true;
+        const minutes=data.minutes??10;
+        if(![5,10,15,30].includes(minutes)) throw fail(400,'局时设置错误');
         if(typeof swapSides!=='boolean') throw fail(400,'换边设置错误');
         const to = typeof data.to === 'string' ? nameKey(data.to) : '';
         if (to === name || !visibleOnline(to) || !streams.has(name)) throw fail(400, '好友当前不在线，或账号不能邀请自己');
         if (busy(name) || busy(to)) throw fail(409, '一方已在对局中');
         if ([...invites.values()].some(invite => invite.from === name && invite.to === to && invite.expires > now())) throw fail(409, '邀请已发出，请等待对手回应');
-        const id = randomUUID(), invite = { id, from: name, fromProfile:profile(name), side, swapSides, to, expires: now() + 60_000 };
+        const id = randomUUID(), invite = { id, from: name, fromProfile:profile(name), side, swapSides, minutes, to, expires: now() + 60_000 };
         invites.set(id, invite); send(to, { type: 'invite', ...invite });
         json(res, 200, { id }); return;
       }
@@ -268,6 +318,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if (!streams.has(invite.from) || !streams.has(name) || busy(name) || busy(invite.from)) throw fail(409, '对手已离线或开始另一场对局');
         const game = { id: randomUUID(), members: [invite.from, name], red: invite.side==='black'?name:invite.from, black: invite.side==='black'?invite.from:name, swapSides:invite.swapSides, created: now() };
         games.set(game.id, game);
+        game.limitMs=invite.minutes*60000;game.baseLimitMs=game.limitMs;initClock(game);
         startHistory(game);
         for (const player of game.members) send(player, { type: 'game', gameId: game.id, red: game.red, black: game.black, initiator: player === game.red });
         broadcastPresence(); json(res, 200, { gameId: game.id }); return;
@@ -275,23 +326,79 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       const game = games.get(data.gameId);
       if (!game || !game.members.includes(name)) throw fail(403, '无权操作该对局');
       const peer = game.members.find(n => n !== name);
+      if(!game.result && clockState(game).used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
+      if(path==='/time/offer') {
+        if(game.result || game.timeOffer) throw fail(409,'已有加时申请或本局已结束');
+        if(!send(peer,{type:'time-offer',gameId:game.id})) throw fail(409,'对方离线');
+        game.timeOffer=name;json(res,200,{ok:true});return;
+      }
+      if(path==='/time/respond') {
+        if(game.result || game.timeOffer!==peer || typeof data.accept!=='boolean') throw fail(400,'加时申请已失效');
+        game.timeOffer=null;
+        if(data.accept) {
+          game.limitMs+=300000;
+          game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);game.clockAt=now();armClock(game);
+        }
+        for(const player of game.members)send(player,{type:'time-result',gameId:game.id,accepted:data.accept});
+        json(res,200,{ok:true});return;
+      }
+      if(path==='/undo/offer') {
+        if(game.result || game.undoOffer || game.clockPly<1) throw fail(409,'当前不能申请悔棋');
+        if(data.content?.record?.moves?.length!==game.clockPly) throw fail(409,'棋谱同步中，请稍后重试');
+        saveGameRecord(game,data.content);game.snapshot=data.content;
+        game.undoOffer={from:name,ply:game.clockPly};
+        send(peer,{type:'undo-offer',gameId:game.id});json(res,200,{ok:true});return;
+      }
+      if(path==='/undo/respond') {
+        if(game.result || game.undoOffer?.from!==peer || typeof data.accept!=='boolean') throw fail(400,'悔棋申请已失效');
+        const offer=game.undoOffer;game.undoOffer=null;
+        if(data.accept && offer.ply!==game.clockPly) throw fail(409,'局面已变化，请重新申请');
+        if(data.accept) {
+          game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
+          game.clockPly--;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);
+          game.snapshot.record.moves.pop();saveGameRecord(game,game.snapshot);
+          for(const player of game.members) send(player,{type:'undo-applied',gameId:game.id,content:game.snapshot});
+        } else send(peer,{type:'undo-declined',gameId:game.id});
+        json(res,200,{ok:true});return;
+      }
+      if(path==='/clock' || path==='/clock/move') {
+        if(path==='/clock/move' && !game.result) {
+          if(data.ply===game.clockPly+1 && name===game[game.clockTurn]) {
+            game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
+            if(game.used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
+            else {game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);}
+          } else if(data.ply>game.clockPly) throw fail(409,'计时步数不一致');
+        }
+        json(res,200,clockState(game));return;
+      }
+      if(path==='/resign') {
+        try{saveGameRecord(game,data.content);}catch{}
+        finishGame(game,name===game.red?'black':'red');json(res,200,{ok:true});return;
+      }
+      if(path==='/draw/offer') {
+        if(game.result || game.drawOffer) throw fail(409,'已有提和或本局已结束');
+        if(!send(peer,{type:'draw-offer',gameId:game.id})) throw fail(409,'对方离线');
+        game.drawOffer=name;json(res,200,{ok:true});return;
+      }
+      if(path==='/draw/respond') {
+        if(game.result || game.drawOffer!==peer || typeof data.accept!=='boolean') throw fail(400,'提和已失效');
+        game.drawOffer=null;
+        if(data.accept){try{saveGameRecord(game,data.content);}catch{} finishGame(game,'draw');}
+        else send(peer,{type:'draw-declined',gameId:game.id});
+        json(res,200,{ok:true});return;
+      }
+      if(path==='/watch/update') {
+        if(game.snapshot && data.content?.record?.moves?.length<game.snapshot.record.moves.length) {json(res,200,{ok:true});return;}
+        saveGameRecord(game,data.content);
+        game.snapshot=data.content;
+        json(res,200,{ok:true});return;
+      }
       if (path === '/next-game') {
         saveGameRecord(game,data.content);
         if (!['red','black','draw'].includes(data.result)) throw fail(400,'对局结果错误');
         game.finished ??= new Map(); game.finished.set(name,data.result);
         if (game.finished.size===2 && new Set(game.finished.values()).size!==1) throw fail(409,'双方结果不一致，请核对局面');
-        if (game.finished.size===2) {
-          endHistory(game,data.result);
-          for(const player of game.members) send(player,{type:'round-finished',gameId:game.id,stats:matchup(player,game.members.find(n=>n!==player))});
-        }
-        if (game.finished.size === 2 && !game.nextTimer) game.nextTimer = setTimeout(() => {
-          if (games.get(game.id) !== game || !game.members.every(player => streams.has(player))) { game.nextTimer = null; return; }
-          games.delete(game.id);
-          const next = { id: randomUUID(), members: game.members, red: game.swapSides?game.black:game.red, black: game.swapSides?game.red:game.black, swapSides:game.swapSides, created: now() };
-          games.set(next.id,next);
-          startHistory(next);
-          for (const player of next.members) send(player,{ type:'game',gameId:next.id,red:next.red,black:next.black,initiator:player===next.red });
-        },5000);
+        if (game.finished.size===2) finishGame(game,data.result);
         json(res,200,{ok:true}); return;
       }
       if (path === '/signal') {
@@ -301,10 +408,9 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         json(res, 200, { ok: true }); return;
       }
       if (path === '/leave') {
-        saveGameRecord(game,data.content);
-        clearTimeout(game.nextTimer);
-        endHistory(game,`${name===game.red?'red':'black'}-left`);
-        games.delete(game.id); send(peer, { type: 'peer-left', gameId: game.id,stats:matchup(peer,name) }); broadcastPresence();
+        // Ending a match must never be blocked by a record upload failure.
+        try { saveGameRecord(game,data.content); } catch {}
+        closeGame(game,name);
         json(res, 200, { ok: true,stats:matchup(name,peer) }); return;
       }
       throw fail(404, '接口不存在');

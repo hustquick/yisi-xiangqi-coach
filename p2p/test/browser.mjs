@@ -3,8 +3,8 @@ import { chromium } from 'playwright';
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const errors = [];
 try {
-  const a = await browser.newPage(), b = await browser.newPage();
-  for (const page of [a, b]) await page.addInitScript(relay => {
+  const a = await browser.newPage(), b = await browser.newPage(), c=await browser.newPage();
+  for (const page of [a, b, c]) await page.addInitScript(relay => {
     const Original = window.RTCPeerConnection; window.__testPeers = [];
     const originalFetch = window.fetch;
     window.fetch = (url, options) => {
@@ -23,9 +23,9 @@ try {
       }
     };
   }, process.env.P2P_TEST_RELAY === '1');
-  for (const page of [a, b]) page.on('pageerror', e => errors.push(e.message));
+  for (const page of [a, b, c]) page.on('pageerror', e => errors.push(e.message));
   const stamp = Date.now();
-  for (const [page, suffix] of [[a, 'a'], [b, 'b']]) {
+  for (const [page, suffix] of [[a, 'a'], [b, 'b'],[c,'c']]) {
     await page.goto(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080');
     assert.equal(await page.getByLabel('连接服务', { exact: true }).count(), 0, '用户界面不暴露服务器设置');
     assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0, '登录不显示确认密码');
@@ -101,6 +101,10 @@ try {
   assert.equal(await a.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
   assert.equal(await a.getByText('教练分析',{exact:true}).count(),0);
   assert.equal(await a.getByText('局势图',{exact:true}).count(),0);
+  assert.equal(await a.getByText('对弈与分析设置',{exact:true}).count(),0);
+  await a.getByText('对局操作',{exact:true}).click();
+  assert.equal(await a.getByRole('button',{name:'提和',exact:true}).count(),1);
+  assert.equal(await a.getByRole('button',{name:'认输',exact:true}).count(),1);
   assert.ok(await b.getByRole('button',{name:'黑将',exact:true}).evaluate(el=>parseFloat(el.style.top)>90),'执黑时黑将在下方');
   if (process.env.P2P_TEST_RELAY === '1') {
     for (const page of [a, b]) assert.equal(await page.evaluate(async () => {
@@ -115,23 +119,42 @@ try {
     await page.getByRole('button', { name: label, exact: true }).first().click();
     await page.getByRole('button', { name: `棋盘 ${to}`, exact: true }).click({ force: true });
   }
+  await c.getByRole('button',{name:'好友列表',exact:true}).click();
+  await c.getByLabel('搜索好友账号',{exact:true}).fill(`test${stamp}a`);
+  await c.getByRole('button',{name:'搜索',exact:true}).click();
+  await c.getByRole('button',{name:'添加好友',exact:true}).click();
+  await a.getByRole('button',{name:'同意好友申请',exact:true}).click();
+  await c.getByRole('button',{name:'观看对弈',exact:true}).click();
+  await c.getByRole('button',{name:'退出观战',exact:true}).waitFor();
+  assert.equal(await c.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
   const red = page => page.getByRole('button', { name: '红兵', exact: true }).first();
   await move(a, '红兵', '0,5');
   await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
+  await c.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
+  const watched=await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style');
+  await move(c,'红兵','0,4');
+  assert.equal(await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style'),watched,'观战者不能落子');
   const after = await red(a).getAttribute('style');
   await a.getByRole('button', { name: '重开', exact: true }).click();
   assert.equal(await red(a).getAttribute('style'), after, '联网禁止单方重开');
   await move(b, '黑卒', '0,4');
+  await a.getByRole('button',{name:'申请加时',exact:true}).click();
+  await b.getByRole('button',{name:'同意加时',exact:true}).click();
+  await a.getByRole('status').filter({hasText:'各加时5分钟'}).waitFor();
+  await a.getByLabel('红方计时',{exact:true}).getByText(/剩余 14:/).waitFor();
   await a.waitForFunction(() => document.querySelector('.piece.black[aria-label="黑卒"]')?.getAttribute('style')?.includes('44.444'));
   await a.screenshot({ path: '/tmp/yisi-p2p-network-a.png', fullPage: true });
+  if (!process.env.P2P_TEST_QUICK) {
   await a.evaluate(() => window.__testPeers.at(-1).close());
   await a.getByRole('button', { name: '重连并核对局面', exact: true }).waitFor();
   await a.getByRole('button', { name: '重连并核对局面', exact: true }).click();
   for (const page of [a, b]) await page.getByRole('status').filter({ hasText: '双方局面一致' }).waitFor({ timeout: 30000 });
   assert.equal(await red(a).getAttribute('style'), after, '重连保留局面');
+  }
   await a.getByRole('button', { name: '退出对局', exact: true }).click();
   await b.getByRole('status').filter({ hasText: '对局已结束' }).waitFor();
   await b.getByRole('status').filter({hasText:'对方已退出'}).waitFor();
+  await c.getByRole('status').filter({hasText:'已结束观战'}).waitFor();
   assert.equal(await b.getByRole('button',{name:'退出对局',exact:true}).count(),0,'对方退出后自动离开对战');
   await a.getByRole('button',{name:'对局历史',exact:true}).click();
   await a.getByRole('region',{name:'对局历史',exact:true}).getByText(/退出结束.*用时/).waitFor();

@@ -1138,6 +1138,7 @@ export default function Home() {
     start: () => { setGameMode("local"); reset(true); },
     record: () => ({version:SAVED_GAME_VERSION,record:{title:recordTitle,pieces:startingPieces,turn:startingTurn,moves:history.map(move=>({from:move.from,to:move.to}))},activePly:0}),
     review: saved => { installRecord(saved.record,{},0); setOutcomeOpen(false); },
+    watch: saved => { installRecord(saved.record,{},saved.record.moves.length,true); setOutcomeOpen(false); },
     receive: (from, to) => {
       const piece = pieces.find(p => p.x === from[0] && p.y === from[1]);
       if (!piece || piece.side !== turn || outcome || !isLegal(piece, to[0], to[1], pieces)) return false;
@@ -1731,8 +1732,8 @@ export default function Home() {
     aiPositionRef.current = "";
   }
 
-  function installRecord(imported: { title: string; pieces: Piece[]; turn: Side; moves: Array<{ from: [number, number]; to: [number, number] }> }, scores: Record<number, number> = {}, requestedPly?: number) {
-    if (network.active) throw new Error("请先退出网络对局，再载入棋谱。");
+  function installRecord(imported: { title: string; pieces: Piece[]; turn: Side; moves: Array<{ from: [number, number]; to: [number, number] }> }, scores: Record<number, number> = {}, requestedPly?: number, spectatorUpdate=false) {
+    if (network.active && !spectatorUpdate) throw new Error("请先退出网络对局，再载入棋谱。");
     let position = imported.pieces.map((piece) => ({ ...piece })); const nextHistory: Move[] = [];
     for (const coordinates of imported.moves) {
       const moving = position.find((piece) => piece.x === coordinates.from[0] && piece.y === coordinates.from[1]);
@@ -1929,6 +1930,7 @@ export default function Home() {
 
       <section className="workspace">
         <div className="board-wrap" ref={boardSectionRef}>
+          {network.clockPanel(boardFlipped?'red':'black')}
           <div className="board-top">
             <div className="history-tools"><button onClick={undo} disabled={activePly === 0} aria-label="悔棋">↶</button><button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length} aria-label="前进">↷</button></div>
             <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={network.active || engineState !== "ready" || !candidates.length} aria-label="显示最优着法">优</button>
@@ -2111,6 +2113,7 @@ export default function Home() {
               <span key={label}>{label}</span>
             ))}
           </div>
+          {network.clockPanel(boardFlipped?'black':'red')}
           <div className="board-hint">
             <span>●</span>
             {gameMode === "setup"
