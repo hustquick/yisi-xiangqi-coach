@@ -6,6 +6,7 @@ type MovePacket = { type: 'move'; gameId: string; ply: number; before: string; f
 type Game = { gameId: string; red: string; black: string; initiator: boolean };
 export function useNetworkGame(options: {
   position: string; ply: number; turn: Side;
+  selected?: [number,number] | null;
   start: () => void;
   record?: () => unknown;
   review?: (saved:any) => void;
@@ -29,7 +30,7 @@ export function useNetworkGame(options: {
   const [showFriends, setShowFriends] = useState(false);
   const [inviteSide,setInviteSide] = useState<Side>('red');
   const [swapSides,setSwapSides] = useState(true);
-  const [minutes,setMinutes]=useState(10);
+  const [minutes,setMinutes]=useState(15);
   const [active, setActive] = useState(false), [connected, setConnected] = useState(false);
   const [clock,setClock]=useState<{limit:number;used:Record<Side,number>;turn:Side;ended:boolean}|null>(null);
   useEffect(()=>{
@@ -47,6 +48,17 @@ export function useNetworkGame(options: {
   const [drawOffer,setDrawOffer] = useState(false), [roundEnding,setRoundEnding] = useState(false);
   const [undoOffer,setUndoOffer]=useState(false);
   const [timeOffer,setTimeOffer]=useState(false);
+  const [peerSelected,setPeerSelected]=useState<[number,number]|null>(null);
+  const [requestFocus,setRequestFocus]=useState('');
+  const operationsRef=useRef<HTMLElement|null>(null);
+  useEffect(()=>{
+    if(!active || roundEnding) return;
+    const frame=requestAnimationFrame(()=>{
+      const card=operationsRef.current?.querySelector<HTMLElement>(`[data-request="${requestFocus}"]`);
+      card?.scrollIntoView({behavior:'smooth',block:'center'});
+      card?.querySelector<HTMLButtonElement>('button')?.focus({preventScroll:true});
+    });return()=>cancelAnimationFrame(frame);
+  },[requestFocus,timeOffer,undoOffer,drawOffer,active,roundEnding]);
   useEffect(()=>{
     if(!active) return;
     const publish=()=>{if(game.current) void api('/watch/update',{gameId:game.current.gameId,content:latest.current.record?.()}).catch(()=>{});};
@@ -84,7 +96,13 @@ export function useNetworkGame(options: {
   const dc = useRef<RTCDataChannel | null>(null), events = useRef<AbortController | null>(null);
   const pending = useRef<RTCIceCandidateInit[]>([]), serial = useRef(Promise.resolve());
   const pendingMove = useRef<number | null>(null), ackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(()=>{
+    if(!active || !connected || !game.current || dc.current?.readyState!=='open') return;
+    const point=options.turn===side && !roundEnding ? options.selected??null : null;
+    try{dc.current.send(JSON.stringify({type:'selection',gameId:game.current.gameId,before:options.position,point}));}catch{}
+  },[options.selected?.[0],options.selected?.[1],options.position,active,connected,roundEnding]);
   function clearConnection() {
+    setPeerSelected(null);
     if (ackTimer.current) clearTimeout(ackTimer.current);
     pendingMove.current = null;
     if (dc.current) { dc.current.onclose = null; dc.current.onmessage = null; dc.current.onopen = null; dc.current.close(); }
@@ -109,6 +127,10 @@ export function useNetworkGame(options: {
         if (m.type === 'sync') {
           if (m.ply !== state.ply || m.position !== state.position) throw new Error('双方局面不一致，请退出后重新邀请');
           setConnected(true); setStatus('对战已连接 · 双方局面一致');
+        } else if(m.type==='selection') {
+          if(m.point===null) {setPeerSelected(null);return;}
+          const localSide=session.current.name===g.red?'red':'black';
+          if(state.turn!==localSide && m.before===state.position && Array.isArray(m.point) && m.point.length===2 && Number.isInteger(m.point[0]) && Number.isInteger(m.point[1]) && m.point[0]>=0 && m.point[0]<9 && m.point[1]>=0 && m.point[1]<10) setPeerSelected(m.point);
         } else if (m.type === 'ack') {
           if (m.ply !== pendingMove.current) throw new Error('落子确认不匹配');
           pendingMove.current = null; if (ackTimer.current) clearTimeout(ackTimer.current);
@@ -118,6 +140,7 @@ export function useNetworkGame(options: {
             throw new Error('回合或局面不一致');
           const validPoint = (p: unknown): p is [number, number] => Array.isArray(p) && p.length === 2 && Number.isInteger(p[0]) && Number.isInteger(p[1]) && p[0] >= 0 && p[0] < 9 && p[1] >= 0 && p[1] < 10;
           if (!validPoint(m.from) || !validPoint(m.to) || !state.receive(m.from, m.to)) throw new Error('对手发送了不合法的走棋');
+          setPeerSelected(null);
           channel.send(JSON.stringify({ type: 'ack', gameId: g.gameId, ply: m.ply + 1 }));
         } else throw new Error('未知对战消息');
       } catch (error) { clearConnection(); setStatus((error as Error).message + '，对局已锁定'); }
@@ -168,14 +191,14 @@ export function useNetworkGame(options: {
         for (const candidate of pending.current.splice(0)) await peer.addIceCandidate(candidate);
         if (m.kind === 'offer') { await peer.setLocalDescription(await peer.createAnswer()); await signal('answer', peer.localDescription?.toJSON()); }
       }
-    } else if(m.type==='time-offer' && m.gameId===game.current?.gameId) {setTimeOffer(true);setStatus('对方申请双方各加时5分钟，请选择同意或拒绝');}
+    } else if(m.type==='time-offer' && m.gameId===game.current?.gameId) {setTimeOffer(true);setRequestFocus('time');setStatus('对方申请双方各加时5分钟，请选择同意或拒绝');}
     else if(m.type==='time-result' && m.gameId===game.current?.gameId) {setTimeOffer(false);setStatus(m.accepted?'双方已同意，各加时5分钟':'加时申请已拒绝');}
-    else if(m.type==='undo-offer' && m.gameId===game.current?.gameId) {setUndoOffer(true);setStatus('对方申请悔棋，请选择同意或拒绝');}
-    else if(m.type==='undo-applied' && m.gameId===game.current?.gameId) {setUndoOffer(false);pendingMove.current=null;if(ackTimer.current)clearTimeout(ackTimer.current);latest.current.watch?.(m.content);setStatus('双方已同意，已回退一步；用时不退还');}
+    else if(m.type==='undo-offer' && m.gameId===game.current?.gameId) {setUndoOffer(true);setRequestFocus('undo');setStatus('对方申请悔棋，请选择同意或拒绝');}
+    else if(m.type==='undo-applied' && m.gameId===game.current?.gameId) {setUndoOffer(false);setPeerSelected(null);pendingMove.current=null;if(ackTimer.current)clearTimeout(ackTimer.current);latest.current.watch?.(m.content);setStatus('双方已同意，已回退一步；用时不退还');}
     else if(m.type==='undo-declined' && m.gameId===game.current?.gameId) {setStatus('对方拒绝悔棋');}
-    else if(m.type==='draw-offer' && m.gameId===game.current?.gameId) {setDrawOffer(true);setStatus('对方提和，请选择同意或拒绝');}
+    else if(m.type==='draw-offer' && m.gameId===game.current?.gameId) {setDrawOffer(true);setRequestFocus('draw');setStatus('对方提和，请选择同意或拒绝');}
     else if(m.type==='draw-declined' && m.gameId===game.current?.gameId) {setStatus('对方拒绝提和，继续对局');}
-    else if(m.type==='round-finished' && m.gameId===game.current?.gameId) { setMatchStats(m.stats);setDrawOffer(false);setRoundEnding(true);setStatus(`${m.result==='draw'?'双方和棋':m.result==='red'?'红方获胜':'黑方获胜'}，5秒后按邀请设置开始下一局`); }
+    else if(m.type==='round-finished' && m.gameId===game.current?.gameId) { setMatchStats(m.stats);setPeerSelected(null);setDrawOffer(false);setRoundEnding(true);setStatus(`${m.result==='draw'?'双方和棋':m.result==='red'?'红方获胜':'黑方获胜'}，5秒后按邀请设置开始下一局`); }
     else if (['peer-left', 'expired'].includes(m.type) && m.gameId === game.current?.gameId) {
       if(m.stats) setMatchStats(m.stats);
       clearConnection(); game.current = null; setActive(false); setInvitation(null);
@@ -317,7 +340,7 @@ export function useNetworkGame(options: {
       </section>
       <button aria-expanded={showFriends} onClick={() => setShowFriends(value => !value)}>好友列表</button>
       {!active && <div aria-label="邀请对战设置" style={{display:'flex',flexWrap:'wrap',gap:12}}>
-        <label>每方局时<select aria-label="每方局时" value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[5,10,15,30].map(n=><option key={n} value={n}>{n} 分钟</option>)}</select></label>
+        <label>每方局时<select aria-label="每方局时" value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[5,10,15,30,45].map(n=><option key={n} value={n}>{n} 分钟</option>)}</select></label>
         <label>本局执棋<select aria-label="邀请执棋方" style={{font:'inherit',padding:8,minHeight:40}} value={inviteSide} onChange={e=>setInviteSide(e.target.value as Side)}><option value="red">执红</option><option value="black">执黑</option></select></label>
         <label>后续对局<select aria-label="下一局执棋设置" style={{font:'inherit',padding:8,minHeight:40}} value={swapSides?'swap':'keep'} onChange={e=>setSwapSides(e.target.value==='swap')}><option value="swap">交替执棋</option><option value="keep">一直执{inviteSide==='red'?'红':'黑'}</option></select></label>
       </div>}
@@ -348,21 +371,30 @@ export function useNetworkGame(options: {
     </>}
     {invitation && !active && <section ref={inviteDialog} role="alert" aria-label="对战邀请" style={{background:'#fff8df',border:'2px solid #c69530',borderRadius:12,padding:16,scrollMarginBlock:24}}>
       <h3>收到对战邀请</h3><p>{invitation.fromProfile?.nickname??invitation.from}{invitation.fromProfile && `（ID ${invitation.fromProfile.id}）`} 邀请你对战</p>
-      <p>本局你执{invitation.side==='black'?'红':'黑'}；每方 {invitation.minutes??10} 分钟；下一局{invitation.swapSides===false?'保持执棋方':'红黑互换'}。</p>
+      <p>本局你执{invitation.side==='black'?'红':'黑'}；每方 {invitation.minutes??15} 分钟；下一局{invitation.swapSides===false?'保持执棋方':'红黑互换'}。</p>
       <div style={{display:'flex',gap:12}}><button style={{flex:1,background:'#176b45',color:'white',fontWeight:700,minHeight:48}} onClick={() => void api('/respond', { id: invitation.id, accept: true }).catch(e => {setStatus(e.message);setInvitation(null);})}>接受</button><button style={{flex:1,background:'#fff0ed',color:'#a32d23',borderColor:'#a32d23',fontWeight:700,minHeight:48}} onClick={() => void api('/respond', { id: invitation.id, accept: false }).then(() => setInvitation(null)).catch(e => {setStatus(e.message);setInvitation(null);})}>拒绝</button></div>
     </section>}
     {watching && <button onClick={()=>{setWatching(null);setStatus('已退出观战');}}>退出观战</button>}
+  </div></details>;
+  const responseCard=(kind:'time'|'undo'|'draw',question:string,acceptLabel:string,rejectLabel:string)=><div role="alert" data-request={kind} className="duel-request"><strong>{question}</strong><div><button onClick={()=>respond(kind,true)}>{acceptLabel}</button><button onClick={()=>respond(kind,false)}>{rejectLabel}</button></div></div>;
+  function respond(kind:string,accept:boolean){
+    if(!['time','undo','draw'].includes(kind))return;
+    void api(`/${kind}/respond`,{gameId:game.current?.gameId,accept,content:kind==='draw'?latest.current.record?.():undefined}).then(()=>{
+      if(kind==='time')setTimeOffer(false);else if(kind==='undo')setUndoOffer(false);else setDrawOffer(false);
+    }).catch(e=>setStatus(e.message));
+  }
+  const operations=active && <section ref={operationsRef} className="duel-operations" aria-label="对局操作区">
     {active && <details><summary>对局操作</summary><div>
       {!roundEnding && <button onClick={()=>void api('/time/offer',{gameId:game.current?.gameId}).then(()=>setStatus('已申请双方各加时5分钟，等待对方同意')).catch(e=>setStatus(e.message))}>申请加时</button>}
       {!roundEnding && <><button disabled={options.ply===0} onClick={()=>void api('/undo/offer',{gameId:game.current?.gameId,content:latest.current.record?.()}).then(()=>setStatus('已申请悔棋，等待对方同意')).catch(e=>setStatus(e.message))}>悔棋</button><button onClick={()=>void api('/draw/offer',{gameId:game.current?.gameId}).then(()=>setStatus('已提和，等待对方回应')).catch(e=>setStatus(e.message))}>提和</button><button onClick={()=>{if(window.confirm('确认认输？')) void api('/resign',{gameId:game.current?.gameId,content:latest.current.record?.()}).catch(e=>setStatus(e.message));}}>认输</button></>}
       <button onClick={()=>void leave()}>退出对局</button>
     </div></details>}
-    {active && timeOffer && !roundEnding && <div>双方各加时5分钟？ <button onClick={()=>void api('/time/respond',{gameId:game.current?.gameId,accept:true}).catch(e=>setStatus(e.message))}>同意加时</button><button onClick={()=>void api('/time/respond',{gameId:game.current?.gameId,accept:false}).catch(e=>setStatus(e.message))}>拒绝加时</button></div>}
-    {active && undoOffer && !roundEnding && <div>对方申请悔棋 <button onClick={()=>void api('/undo/respond',{gameId:game.current?.gameId,accept:true}).catch(e=>setStatus(e.message))}>同意悔棋</button><button onClick={()=>void api('/undo/respond',{gameId:game.current?.gameId,accept:false}).then(()=>setUndoOffer(false)).catch(e=>setStatus(e.message))}>拒绝悔棋</button></div>}
-    {active && drawOffer && !roundEnding && <div>对方提和 <button onClick={()=>void api('/draw/respond',{gameId:game.current?.gameId,accept:true,content:latest.current.record?.()}).catch(e=>setStatus(e.message))}>同意和棋</button><button onClick={()=>void api('/draw/respond',{gameId:game.current?.gameId,accept:false}).then(()=>setDrawOffer(false)).catch(e=>setStatus(e.message))}>拒绝和棋</button></div>}
+    {timeOffer && !roundEnding && responseCard('time','对方申请双方各加时5分钟','同意加时','拒绝加时')}
+    {undoOffer && !roundEnding && responseCard('undo','对方申请悔棋','同意悔棋','拒绝悔棋')}
+    {drawOffer && !roundEnding && responseCard('draw','对方提和','同意和棋','拒绝和棋')}
     {active && !connected && <button onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button>}
-  </div></details>;
-  const clockPanel=(color:Side)=>active && clock && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{padding:'8px 12px',borderRadius:10,background:clock.turn===color?'#e3efe5':'#f4f1e9',display:'flex',justifyContent:'space-between',gap:8,fontVariantNumeric:'tabular-nums'}}><strong>{color==='red'?'红方':'黑方'}{clock.turn===color&&!clock.ended?' · 行棋中':''}</strong><span>已用 {formatTime(clock.used[color])} · 剩余 {formatTime(clock.limit-clock.used[color])}</span></div>;
+  </section>;
+  const clockPanel=(color:Side)=>active && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{minHeight:44,fontSize:14,padding:'8px 12px',borderRadius:10,background:clock?.turn===color?'#e3efe5':'#f4f1e9',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontVariantNumeric:'tabular-nums'}}><strong>{color==='red'?'红方':'黑方'}{clock?.turn===color&&!clock.ended?' · 行棋中':''}</strong><span>{clock ? <>已用 {formatTime(clock.used[color])} · 剩余 {formatTime(clock.limit-clock.used[color])}</> : '计时同步中'}</span></div>;
   function formatTime(ms:number){const s=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
-  return { clockPanel, active:active || !!watching, watching:!!watching, side, connected, sendMove, panel, logged, finishRound: (result: Side | 'draw')=>game.current ? api('/next-game',{gameId:game.current.gameId,result,content:latest.current.record?.()}).then(()=>setStatus('本局结束，双方确认后5秒按邀请设置开始下一局')) : Promise.resolve(), account: logged ? session.current.name : '', accountApi: api };
+  return { operations, peerSelected, clockPanel, active:active || !!watching, watching:!!watching, side, connected, sendMove, panel, logged, finishRound: (result: Side | 'draw')=>game.current ? api('/next-game',{gameId:game.current.gameId,result,content:latest.current.record?.()}).then(()=>setStatus('本局结束，双方确认后5秒按邀请设置开始下一局')) : Promise.resolve(), account: logged ? session.current.name : '', accountApi: api };
 }

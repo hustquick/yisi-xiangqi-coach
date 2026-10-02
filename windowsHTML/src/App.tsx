@@ -1135,7 +1135,15 @@ export default function Home() {
   const [gameMode, setGameMode] = useState<GameMode>("local");
   const network = useNetworkGame({
     position: positionFen(pieces, turn, activePly), ply: activePly, turn,
-    start: () => { setGameMode("local"); reset(true); },
+    selected: selected ? (()=>{const p=pieces.find(p=>p.id===selected);return p ? [p.x,p.y] as [number,number] : null;})() : null,
+    start: () => {
+      setGameMode("local"); reset(true);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const board=boardSectionRef.current?.querySelector<HTMLElement>('.board');
+        board?.focus({preventScroll:true});
+        board?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+      }));
+    },
     record: () => ({version:SAVED_GAME_VERSION,record:{title:recordTitle,pieces:startingPieces,turn:startingTurn,moves:history.map(move=>({from:move.from,to:move.to}))},activePly:0}),
     review: saved => { installRecord(saved.record,{},0); setOutcomeOpen(false); },
     watch: saved => { installRecord(saved.record,{},saved.record.moves.length,true); setOutcomeOpen(false); },
@@ -1932,7 +1940,7 @@ export default function Home() {
         <div className="board-wrap" ref={boardSectionRef}>
           {network.clockPanel(boardFlipped?'red':'black')}
           <div className="board-top">
-            <div className="history-tools"><button onClick={undo} disabled={activePly === 0} aria-label="悔棋">↶</button><button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length} aria-label="前进">↷</button></div>
+            <div className="history-tools"><button onClick={undo} disabled={network.active || activePly === 0} aria-label="悔棋">↶</button><button onClick={() => goToPly(activePly + 1)} disabled={network.active || activePly >= history.length} aria-label="前进">↷</button></div>
             <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={network.active || engineState !== "ready" || !candidates.length} aria-label="显示最优着法">优</button>
             <div className="turn-label">
               <b className={turn === "red" ? "active red-turn" : "black-turn"}>
@@ -1941,7 +1949,7 @@ export default function Home() {
               <span>走棋</span>
             </div>
             <div className="tools">
-              <button onClick={() => setBoardFlipped((value) => !value)} aria-label="切换红黑视角">⇅</button><button onClick={reset} aria-label="重开">↻</button>
+              <button onClick={() => setBoardFlipped((value) => !value)} aria-label="切换红黑视角">⇅</button><button onClick={reset} disabled={network.active} aria-label="重开">↻</button>
             </div>
           </div>
           <div
@@ -1955,7 +1963,7 @@ export default function Home() {
               <span key={label}>{label}</span>
             ))}
           </div>
-          <div className="board" aria-label="中国象棋棋盘">
+          <div className="board" aria-label="中国象棋棋盘" tabIndex={-1}>
             <svg
               className="board-lines"
               viewBox="0 0 8 9"
@@ -2014,7 +2022,8 @@ export default function Home() {
                   disabled={previewingBoard}
                   aria-label={`${p.side === "red" ? "红" : "黑"}${p.name}${targetRank === 0 ? "，最佳吃子落点" : targetRank > 0 ? "，可吃落点" : ""}`}
                   onClick={() => clickPoint(p.x, p.y)}
-                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
+                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${network.active && p.side!==network.side && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? 'peer-selected' : ''} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
+                  title={network.active && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? '对方正在摸子' : undefined}
                   style={{
                     left: `${(boardFlipped ? 8 - p.x : p.x) * 12.5}%`,
                     top: `${(boardFlipped ? 9 - p.y : p.y) * 11.111}%`,
@@ -2114,6 +2123,7 @@ export default function Home() {
             ))}
           </div>
           {network.clockPanel(boardFlipped?'black':'red')}
+          {network.operations}
           <div className="board-hint">
             <span>●</span>
             {gameMode === "setup"

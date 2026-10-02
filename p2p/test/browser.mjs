@@ -26,7 +26,7 @@ try {
   for (const page of [a, b, c]) page.on('pageerror', e => errors.push(e.message));
   const stamp = Date.now();
   for (const [page, suffix] of [[a, 'a'], [b, 'b'],[c,'c']]) {
-    await page.goto(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080');
+    await page.goto(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080',{waitUntil:'domcontentloaded'});
     assert.equal(await page.getByLabel('连接服务', { exact: true }).count(), 0, '用户界面不暴露服务器设置');
     assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0, '登录不显示确认密码');
     await page.getByRole('button', { name: '注册', exact: true }).click();
@@ -67,6 +67,9 @@ try {
   await a.getByRole('button', { name: '添加好友', exact: true }).click();
   await b.getByRole('button',{name:'同意好友申请',exact:true}).click();
   const friendRow = a.locator(`[data-friend="test${stamp}b"]`);
+  assert.equal(await a.getByLabel('每方局时',{exact:true}).inputValue(),'15');
+  const heights=await a.locator('[aria-label="邀请对战设置"] select').evaluateAll(items=>items.map(el=>el.getBoundingClientRect().height));
+  assert.equal(heights.length,3);assert.ok(heights.every(h=>h===40),'三个选择框等高');
   await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
   await friendRow.getByRole('button', { name: '好友信息', exact: true }).click();
   await friendRow.getByText(`好友账号：test${stamp}b`, { exact: true }).waitFor();
@@ -98,6 +101,10 @@ try {
   assert.equal(await b.locator('.network-panel').evaluate(el=>el.open),true);
   await b.getByRole('button', { name: '接受', exact: true }).click();
   for (const page of [a, b]) await page.getByRole('status').filter({ hasText: '双方局面一致' }).waitFor({ timeout: 30000 });
+  for(const page of [a,b]) {
+    await page.waitForFunction(()=>document.activeElement===document.querySelector('.board'));
+    await page.waitForFunction(()=>{const r=document.querySelector('.board').getBoundingClientRect();return Math.abs(r.top+r.height/2-innerHeight/2)<5;}).catch(async error=>{console.log(await page.locator('.board').evaluate(el=>({top:el.getBoundingClientRect().top,height:el.getBoundingClientRect().height,viewport:innerHeight,scroll:scrollY})));await page.screenshot({path:'/tmp/yisi-focus-failed.png',fullPage:true});throw error;});
+  }
   assert.equal(await a.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
   assert.equal(await a.getByText('教练分析',{exact:true}).count(),0);
   assert.equal(await a.getByText('局势图',{exact:true}).count(),0);
@@ -128,20 +135,37 @@ try {
   await c.getByRole('button',{name:'退出观战',exact:true}).waitFor();
   assert.equal(await c.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
   const red = page => page.getByRole('button', { name: '红兵', exact: true }).first();
-  await move(a, '红兵', '0,5');
+  await a.getByRole('button',{name:'红兵',exact:true}).first().click();
+  await b.locator('.piece.peer-selected').waitFor();
+  assert.equal(await b.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','对方能看到摸子');
+  await a.getByRole('button',{name:'棋盘 0,5',exact:true}).click({force:true});
+  await b.locator('.piece.peer-selected').waitFor({state:'detached'});
   await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
   await c.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
   const watched=await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style');
   await move(c,'红兵','0,4');
   assert.equal(await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style'),watched,'观战者不能落子');
   const after = await red(a).getAttribute('style');
-  await a.getByRole('button', { name: '重开', exact: true }).click();
+  assert.equal(await a.getByRole('button', { name: '重开', exact: true }).isDisabled(),true);
+  assert.equal(await a.getByRole('button', { name: '悔棋', exact: true }).first().isDisabled(),true);
   assert.equal(await red(a).getAttribute('style'), after, '联网禁止单方重开');
   await move(b, '黑卒', '0,4');
+  for(const page of [a,b]) assert.equal(await page.getByRole('button',{name:'同意加时',exact:true}).count(),0,'未收到请求不显示同意按钮');
   await a.getByRole('button',{name:'申请加时',exact:true}).click();
+  await b.waitForFunction(()=>document.activeElement?.textContent==='同意加时');
+  assert.equal(await a.getByRole('button',{name:'同意加时',exact:true}).count(),0,'发起方不显示同意按钮');
   await b.getByRole('button',{name:'同意加时',exact:true}).click();
+  await b.getByRole('button',{name:'同意加时',exact:true}).waitFor({state:'detached'});
   await a.getByRole('status').filter({hasText:'各加时5分钟'}).waitFor();
-  await a.getByLabel('红方计时',{exact:true}).getByText(/剩余 14:/).waitFor();
+  await a.getByLabel('红方计时',{exact:true}).getByText(/剩余 19:/).waitFor();
+  await a.getByRole('button',{name:'悔棋',exact:true}).last().click();
+  await b.waitForFunction(()=>document.activeElement?.textContent==='同意悔棋');
+  await b.getByRole('button',{name:'拒绝悔棋',exact:true}).click();
+  await a.getByRole('status').filter({hasText:'对方拒绝悔棋'}).waitFor();
+  await a.getByRole('button',{name:'提和',exact:true}).click();
+  await b.waitForFunction(()=>document.activeElement?.textContent==='同意和棋');
+  await b.getByRole('button',{name:'拒绝和棋',exact:true}).click();
+  await a.getByRole('status').filter({hasText:'对方拒绝提和'}).waitFor();
   await a.waitForFunction(() => document.querySelector('.piece.black[aria-label="黑卒"]')?.getAttribute('style')?.includes('44.444'));
   await a.screenshot({ path: '/tmp/yisi-p2p-network-a.png', fullPage: true });
   if (!process.env.P2P_TEST_QUICK) {

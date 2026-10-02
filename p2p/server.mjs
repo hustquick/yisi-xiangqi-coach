@@ -93,7 +93,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     game.clockTimer.unref?.();
   }
   function initClock(game) {
-    game.limitMs??=600000;game.used={red:0,black:0};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
+    game.limitMs??=900000;game.used={red:0,black:0};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
   }
   function closeGame(game,name) {
     clearTimeout(game.nextTimer);clearTimeout(game.clockTimer); games.delete(game.id);
@@ -299,8 +299,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         const side=data.side??'red';
         if(!['red','black'].includes(side)) throw fail(400,'请选择红方或黑方');
         const swapSides=data.swapSides??true;
-        const minutes=data.minutes??10;
-        if(![5,10,15,30].includes(minutes)) throw fail(400,'局时设置错误');
+        const minutes=data.minutes??15;
+        if(![5,10,15,30,45].includes(minutes)) throw fail(400,'局时设置错误');
         if(typeof swapSides!=='boolean') throw fail(400,'换边设置错误');
         const to = typeof data.to === 'string' ? nameKey(data.to) : '';
         if (to === name || !visibleOnline(to) || !streams.has(name)) throw fail(400, '好友当前不在线，或账号不能邀请自己');
@@ -328,6 +328,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       const peer = game.members.find(n => n !== name);
       if(!game.result && clockState(game).used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
       if(path==='/time/offer') {
+        if(game.limitMs>=2700000) throw fail(409,'局时已达45分钟上限');
         if(game.result || game.timeOffer) throw fail(409,'已有加时申请或本局已结束');
         if(!send(peer,{type:'time-offer',gameId:game.id})) throw fail(409,'对方离线');
         game.timeOffer=name;json(res,200,{ok:true});return;
@@ -336,7 +337,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if(game.result || game.timeOffer!==peer || typeof data.accept!=='boolean') throw fail(400,'加时申请已失效');
         game.timeOffer=null;
         if(data.accept) {
-          game.limitMs+=300000;
+          game.limitMs=Math.min(2700000,game.limitMs+300000);
           game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);game.clockAt=now();armClock(game);
         }
         for(const player of game.members)send(player,{type:'time-result',gameId:game.id,accepted:data.accept});
@@ -388,6 +389,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         json(res,200,{ok:true});return;
       }
       if(path==='/watch/update') {
+        if(data.content?.record?.moves?.length!==game.clockPly) {json(res,200,{ok:true});return;}
         if(game.snapshot && data.content?.record?.moves?.length<game.snapshot.record.moves.length) {json(res,200,{ok:true});return;}
         saveGameRecord(game,data.content);
         game.snapshot=data.content;

@@ -14,11 +14,12 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
   try{
     const a=await request('/register',{name:'playerA',password:'1'}),b=await request('/register',{name:'playerB',password:'1'}),w=await request('/register',{name:'watcher',password:'1'});
     for(const user of [a,b,w]){const controller=new AbortController();controllers.push(controller);const response=await fetch(base+'/events',{headers:{Authorization:`Bearer ${user.token}`},signal:controller.signal});void response.body.pipeTo(new WritableStream({write(){}})).catch(()=>{});}
+    assert.equal((await request('/invite',{to:b.name,minutes:60},a.token)).status,400);
     const invite=await request('/invite',{to:b.name},a.token);
     const game=await request('/respond',{id:invite.id,accept:true},b.token);
     clock+=2000;
     const firstClock=await request('/clock',{gameId:game.gameId},a.token);
-    assert.equal(firstClock.limit,600000);assert.equal(firstClock.used.red,2000);assert.equal(firstClock.used.black,0);
+    assert.equal(firstClock.limit,900000);assert.equal(firstClock.used.red,2000);assert.equal(firstClock.used.black,0);
     assert.equal((await request('/clock/move',{gameId:game.gameId,ply:1},b.token)).status,409);
     await request('/clock/move',{gameId:game.gameId,ply:1},a.token);
     clock+=3000;
@@ -27,9 +28,9 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     await request('/time/offer',{gameId:game.gameId},a.token);
     assert.equal((await request('/time/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
     await request('/time/respond',{gameId:game.gameId,accept:false},b.token);
-    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,600000);
-    await request('/time/offer',{gameId:game.gameId},a.token);await request('/time/respond',{gameId:game.gameId,accept:true},b.token);
     assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,900000);
+    await request('/time/offer',{gameId:game.gameId},a.token);await request('/time/respond',{gameId:game.gameId,accept:true},b.token);
+    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,1200000);
     const undoContent={version:1,record:{title:'悔棋测试',pieces:[],turn:'red',moves:[{from:[0,6],to:[0,5]}]}};
     await request('/undo/offer',{gameId:game.gameId,content:undoContent},a.token);
     assert.equal((await request('/undo/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
@@ -49,12 +50,17 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     assert.equal((await request('/history',{},a.token)).games[0].result,'draw');
     await new Promise(resolve=>setTimeout(resolve,5200));
     const next=(await request('/history',{},a.token)).games[0];
-    assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,600000,'下一局不继承临时加时');
+    assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,900000,'下一局不继承临时加时');
     clock+=100;await request('/resign',{gameId:next.id,content},a.token);
     assert.equal((await request('/history',{},a.token)).games[0].result,'red');
     assert.equal((await request('/leave',{gameId:next.id,content:{invalid:true}},a.token)).status,200);
     assert.equal((await request('/search',{name:b.id},w.token)).user.busy,false);
     assert.equal((await request('/watch',{name:a.name},w.token)).status,404);
+    const longInvite=await request('/invite',{to:b.name,minutes:45},a.token);
+    const longGame=await request('/respond',{id:longInvite.id,accept:true},b.token);
+    assert.equal((await request('/clock',{gameId:longGame.gameId},a.token)).limit,2700000);
+    assert.equal((await request('/time/offer',{gameId:longGame.gameId},a.token)).status,409);
+    await request('/leave',{gameId:longGame.gameId},a.token);
   }finally{controllers.forEach(c=>c.abort());server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 
@@ -115,7 +121,7 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     assert.match((await duplicate.json()).error,/账号已存在/);
     assert.equal((await post('/search',{name:'棋友'},a.token)).users[0].id,chinese.id);
     const timedGame=(await post('/history',{},a.token)).games[0];
-    clock+=600001;
+    clock+=900001;
     assert.equal((await post('/clock',{gameId:timedGame.id},a.token)).ended,true);
     assert.equal((await post('/history',{},a.token)).games[0].result,'black','红方用时耗尽由服务器判负');
     await post('/leave',{gameId:timedGame.id},a.token);
