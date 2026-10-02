@@ -1,6 +1,7 @@
 "use client";
 
 import { useNetworkGame } from "../../html/app/network-game";
+import { coachHints } from './coach-hints';
 
 import React, {
   useEffect,
@@ -1872,7 +1873,7 @@ export default function Home() {
           <span className="seal">象</span>
           <div>
             <strong>弈思</strong>
-            <small>象棋思考教练 · Windows HTML</small>
+            <small>象棋思考教练</small>
           </div>
         </div>
         <div className={`status engine-${engineState}`}>
@@ -1887,7 +1888,7 @@ export default function Home() {
                   ? `${engineMode === "native" ? "本地" : "浏览器"}皮卡鱼深度 ${analysisDepth} 计算中`
                   : engineState === "error"
                     ? "皮卡鱼计算超时 · 暂无可靠评分"
-                    : `${engineMode === "native" ? `本地原生皮卡鱼 · ${engineThreads ?? 1}线程 · NNUE已本地加载` : "浏览器皮卡鱼"}已就绪`}
+                    : "已就绪"}
         </div>
       </header>
 
@@ -2175,6 +2176,18 @@ export default function Home() {
                   : `皮卡鱼正在以深度 ${analysisDepth} 分析这枚棋子的全部合法着法。`
               : analysis.detail}
           </p>
+          <section aria-label="局面提示" className="global-advice">
+            <strong>现在该留意什么</strong>
+            {coachHints(pieces, turn, isLegal, isInCheck, engineState === 'ready' && candidates[0] ? {
+              ...candidates[0], reply: (() => {
+                const c = candidates[0]; if (!c.from || !c.to || !c.uciMoves?.[1]) return undefined;
+                const moving = pieces.find(p => p.x === c.from![0] && p.y === c.from![1]); if (!moving) return undefined;
+                const next = pieces.filter(p => p.x !== c.to![0] || p.y !== c.to![1]).map(p => p.id === moving.id ? { ...p, x: c.to![0], y: c.to![1] } : p);
+                return uciMoveToName(c.uciMoves[1], next);
+              })(),
+            } : undefined).map((hint, i) => <p key={i}>{hint}</p>)}
+            {engineState !== 'ready' && <p>正在计算候选着法；以上仅提示当前棋盘可核验的直接威胁，不提前评价走法优劣。</p>}
+          </section>
           <div className="global-best-summary">
             <span>全局最优着法 · 单击动画演示</span>
             {candidates[0] ? (
