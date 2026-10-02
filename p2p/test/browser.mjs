@@ -72,18 +72,18 @@ try {
   await friendRow.getByText(`好友账号：test${stamp}b`, { exact: true }).waitFor();
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('invisible');
   await friendRow.locator('span').filter({hasText:'离线'}).waitFor();
-  assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
+  assert.equal(await friendRow.getByRole('button', { name: '邀请对战', exact: true }).isDisabled(), true);
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('online');
   await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
   await friendRow.locator('span').filter({hasText:'离线'}).waitFor();
-  assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
+  assert.equal(await friendRow.getByRole('button', { name: '邀请对战', exact: true }).isDisabled(), true);
   await b.getByLabel('网络密码', { exact: true }).fill('1');
   await b.getByRole('button', { name: '登录', exact: true }).click();
   await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
-  await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  await friendRow.getByRole('button', { name: '邀请对战', exact: true }).click();
   await a.getByRole('status').filter({ hasText: '邀请已发出，等待对手接受' }).waitFor();
-  await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  await friendRow.getByRole('button', { name: '邀请对战', exact: true }).click();
   await a.getByRole('status').filter({ hasText: '邀请已发出，请等待对手回应' }).waitFor();
   if(process.env.P2P_TEST_QUICK!=='1') {
   await b.context().setOffline(true);
@@ -91,7 +91,7 @@ try {
   await b.getByRole('status').filter({ hasText: '正在恢复在线连接' }).waitFor();
   await b.context().setOffline(false);
   await a.getByRole('status').filter({ hasText: '邀请已失效' }).waitFor({ timeout: 80_000 });
-  await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  await friendRow.getByRole('button', { name: '邀请对战', exact: true }).click();
   }
   await b.getByRole('alert',{name:'对战邀请',exact:true}).waitFor();
   await b.waitForFunction(()=>document.activeElement?.textContent==='接受');

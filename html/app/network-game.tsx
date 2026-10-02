@@ -291,7 +291,7 @@ export function useNetworkGame(options: {
       {users.length === 0 && <small>暂无好友</small>}
       {users.map(u => <div key={u.name} data-friend={u.name} style={{ borderBottom: '1px solid #e4e0d6', paddingBottom: 6 }}>
         <span>{u.nickname} · ID {u.id} · {u.online ? u.busy ? '对局中' : '在线' : '离线'}</span><div>
-          <button disabled={active || !u.online || u.busy} onClick={() => void api('/invite', { to: u.name, side:inviteSide,swapSides }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请 {u.nickname}</button>
+          <button disabled={active || !u.online || u.busy} onClick={() => void api('/invite', { to: u.name, side:inviteSide,swapSides }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请对战</button>
           <button aria-expanded={friendDetails === u.name} onClick={() => setFriendDetails(friendDetails === u.name ? null : u.name)}>好友信息</button>
           <button disabled={friendBusy} onClick={() => void changeFriend(u.name, false)}>移除好友</button>
         </div>
