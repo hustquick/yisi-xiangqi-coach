@@ -2174,12 +2174,12 @@ export default function Home() {
                   ? "皮卡鱼限定搜索超时或当前模式不支持，已停止推荐，不会使用启发式分数代替。"
                   : `皮卡鱼正在以深度 ${analysisDepth} 分析这枚棋子的全部合法着法。`}
           </p>}
-          <section aria-label="局面提示" className="global-advice">
+          <Collapsible title="局面提示"><section aria-label="局面提示" className="global-advice">
             {coachPlan(pieces, turn, isLegal, isInCheck, engineState === 'ready' ? engineLines : [], uciMoveToName).map(hint => <div key={hint.title}><strong>{hint.title}</strong><p>{hint.text}</p></div>)}
             {engineState !== 'ready' && <p>正在计算候选着法；以上仅提示当前棋盘可核验的直接威胁，不提前评价走法优劣。</p>}
             {engineState === 'ready' && <div role="group" aria-label="候选变化对照">{candidates.slice(0, 3).map((candidate, index) => <button key={candidate.move} onClick={() => scheduleCandidatePreview(candidate)}>演示{index === 0 ? '首选' : `备选${index}`}：{candidate.move}</button>)}</div>}
             <details><summary>评分与分析说明</summary><p>正分有利于所标行棋方；分差不是胜率。战术警报仅核对直接吃子与立即吃回，不能替代完整交换计算。着法要点描述可验证的棋形变化，不等于证明它是首选的全部原因。</p></details>
-          </section>
+          </section></Collapsible>
           <div className="global-best-summary">
             <span>全局最优着法 · 单击动画演示</span>
             {candidates[0] ? (

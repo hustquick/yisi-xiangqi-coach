@@ -8,6 +8,10 @@ try {
   await page.locator('.engine-ready').waitFor({ state: 'attached', timeout: 120000 });
   assert.equal(await page.locator('header').textContent().then(text => text.includes('Windows HTML')), false);
   assert.equal((await page.locator('.engine-ready').textContent()).trim(), '已就绪');
+  const hints = page.getByRole('region', { name: '局面提示' });
+  assert.equal(await hints.isVisible(), false, '局面提示默认收起');
+  await page.getByText('局面提示', { exact: true }).click();
+  assert.equal(await hints.isVisible(), true);
   assert.ok((await page.getByRole('region', { name: '局面提示' }).textContent()).includes('建议走法与计算线'));
   assert.equal(await page.getByRole('button', { name: '红兵', exact: true }).count(), 5);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '手机宽度不应横向溢出');
