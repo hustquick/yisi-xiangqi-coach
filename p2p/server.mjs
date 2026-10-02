@@ -43,6 +43,12 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     const ended = now();
     db.prepare('UPDATE game_history SET ended=?,result=?,duration=? WHERE id=? AND ended IS NULL').run(ended,result,Math.max(0,ended-game.created),game.id);
   }
+  function matchup(name,peer) {
+    const rows=db.prepare("SELECT red,black,result FROM game_history WHERE ((red=? AND black=?) OR (red=? AND black=?)) AND ended IS NOT NULL AND result IN ('red','black','draw')").all(name,peer,peer,name);
+    let wins=0,losses=0,draws=0;
+    for(const row of rows) { if(row.result==='draw') draws++; else if(row[row.result]===name) wins++; else losses++; }
+    return {opponent:profile(peer),total:rows.length,wins,losses,draws};
+  }
   // A service restart cannot preserve a live peer session; retain its history honestly.
   db.prepare("UPDATE game_history SET ended=?,result='服务中断',duration=MAX(0,?-started) WHERE ended IS NULL").run(now(),now());
   db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created INTEGER NOT NULL)');
@@ -161,8 +167,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       }
       if (path === '/history') {
         const before = Number.isSafeInteger(data.before) ? data.before : now()+1;
-        const rows = db.prepare('SELECT * FROM game_history WHERE (red=? OR black=?) AND started<? ORDER BY started DESC,id DESC LIMIT 100').all(name,name,before);
-        json(res,200,{games:rows.map(row=>({id:row.id,side:row.red===name?'red':'black',opponent:profile(row.red===name?row.black:row.red),started:row.started,ended:row.ended,result:row.result??'进行中',duration:row.ended===null?Math.max(0,now()-row.started):row.duration}))}); return;
+        const peer = data.opponentId == null ? null : db.prepare('SELECT name FROM profiles WHERE id=?').get(String(data.opponentId))?.name;
+        if(data.opponentId!=null && !peer) throw fail(404,'对手不存在');
+        const rows = peer ? db.prepare('SELECT * FROM game_history WHERE ((red=? AND black=?) OR (red=? AND black=?)) AND started<? ORDER BY started DESC,id DESC LIMIT 100').all(name,peer,peer,name,before) : db.prepare('SELECT * FROM game_history WHERE (red=? OR black=?) AND started<? ORDER BY started DESC,id DESC LIMIT 100').all(name,name,before);
+        json(res,200,{games:rows.map(row=>({id:row.id,side:row.red===name?'red':'black',opponent:profile(row.red===name?row.black:row.red),started:row.started,ended:row.ended,hasRecord:!!db.prepare('SELECT 1 FROM game_records WHERE game=?').get(row.id),result:row.result??'进行中',duration:row.ended===null?Math.max(0,now()-row.started):row.duration}))}); return;
       }
       if (path === '/profile') {
         if (typeof data.nickname !== 'string' || !data.nickname.trim() || data.nickname.trim().length > 32) throw fail(400, '名称须为1–32个字符');
@@ -272,7 +280,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if (!['red','black','draw'].includes(data.result)) throw fail(400,'对局结果错误');
         game.finished ??= new Map(); game.finished.set(name,data.result);
         if (game.finished.size===2 && new Set(game.finished.values()).size!==1) throw fail(409,'双方结果不一致，请核对局面');
-        if (game.finished.size===2) endHistory(game,data.result);
+        if (game.finished.size===2) {
+          endHistory(game,data.result);
+          for(const player of game.members) send(player,{type:'round-finished',gameId:game.id,stats:matchup(player,game.members.find(n=>n!==player))});
+        }
         if (game.finished.size === 2 && !game.nextTimer) game.nextTimer = setTimeout(() => {
           if (games.get(game.id) !== game || !game.members.every(player => streams.has(player))) { game.nextTimer = null; return; }
           games.delete(game.id);
@@ -293,8 +304,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         saveGameRecord(game,data.content);
         clearTimeout(game.nextTimer);
         endHistory(game,`${name===game.red?'red':'black'}-left`);
-        games.delete(game.id); send(peer, { type: 'peer-left', gameId: game.id }); broadcastPresence();
-        json(res, 200, { ok: true }); return;
+        games.delete(game.id); send(peer, { type: 'peer-left', gameId: game.id,stats:matchup(peer,name) }); broadcastPresence();
+        json(res, 200, { ok: true,stats:matchup(name,peer) }); return;
       }
       throw fail(404, '接口不存在');
     } catch (error) {

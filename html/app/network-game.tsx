@@ -18,6 +18,7 @@ export function useNetworkGame(options: {
   type Friend = { name: string; id: string; nickname: string; online: boolean; busy: boolean; added?: boolean };
   const [nickname,setNickname] = useState('');
   const [history,setHistory] = useState<any[] | null>(null);
+  const [matchStats,setMatchStats] = useState<{opponent:{id:string;nickname:string};total:number;wins:number;losses:number;draws:number}|null>(null);
   const [users, setUsers] = useState<Friend[]>([]);
   const [requests,setRequests] = useState<Friend[]>([]);
   const [friendQuery, setFriendQuery] = useState(''), [foundFriend, setFoundFriend] = useState<Friend | null>(null);
@@ -129,8 +130,12 @@ export function useNetworkGame(options: {
         for (const candidate of pending.current.splice(0)) await peer.addIceCandidate(candidate);
         if (m.kind === 'offer') { await peer.setLocalDescription(await peer.createAnswer()); await signal('answer', peer.localDescription?.toJSON()); }
       }
-    } else if (['peer-left', 'expired'].includes(m.type) && m.gameId === game.current?.gameId) {
-      clearConnection(); game.current = null; setActive(false); setStatus('对局已结束，棋谱留在本机');
+    } else if(m.type==='round-finished' && m.gameId===game.current?.gameId) { setMatchStats(m.stats); }
+    else if (['peer-left', 'expired'].includes(m.type) && m.gameId === game.current?.gameId) {
+      if(m.stats) setMatchStats(m.stats);
+      clearConnection(); game.current = null; setActive(false); setInvitation(null);
+      setStatus(m.type === 'peer-left' ? '对方已退出，当前对局已结束；你已自动退出，可查看历史对局并复盘' : '对局已结束，你已自动退出');
+      if(networkPanel.current) { networkPanel.current.open=true; networkPanel.current.scrollIntoView({behavior:'smooth',block:'center'}); }
     } else if (m.type === 'peer-offline') setStatus('对手信令离线；已建立的直连可能仍可继续');
     else if (m.type === 'signed-out') { events.current?.abort(); clearConnection(); game.current = null; setActive(false); setLogged(false); setStatus('账号已在其他设备登录'); }
   }
@@ -187,7 +192,7 @@ export function useNetworkGame(options: {
     finally { setAuthBusy(false); }
   }
   async function leave() {
-    try { if (game.current) await api('/leave', { gameId: game.current.gameId,content:latest.current.record?.() }); }
+    try { if (game.current) { const result=await api('/leave', { gameId: game.current.gameId,content:latest.current.record?.() });setMatchStats(result.stats??null); } }
     catch (error) {
       if (![401, 403].includes((error as Error & { status?: number }).status ?? 0)) {
         setStatus((error as Error).message + '；服务器可能暂时保留对局，恢复在线后重试退出'); return;
@@ -269,8 +274,8 @@ export function useNetworkGame(options: {
       <button onClick={()=>setShowFriends(true)}>邀请对战</button>
       {requests.map(request=><div key={request.name}>{request.nickname}（ID {request.id}）申请添加好友 <button onClick={()=>void api('/friends/respond',{name:request.name,accept:true}).catch(e=>setStatus(e.message))}>同意好友申请</button><button onClick={()=>void api('/friends/respond',{name:request.name,accept:false}).catch(e=>setStatus(e.message))}>拒绝好友申请</button></div>)}
       <button onClick={()=>void api('/history',{}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>对局历史</button>
-      {history && <div>{history.filter(row=>row.ended).map(row=><button key={row.id} disabled={active} onClick={()=>void api('/history/get',{id:row.id}).then(value=>latest.current.review?.(value.content)).catch(e=>setStatus(e.message))}>复盘分析 · {new Date(row.started).toLocaleString()}</button>)}{active && <small>退出当前对战后可复盘分析。</small>}</div>}
-      {history && <section aria-label="对局历史"><button onClick={()=>setHistory(null)}>收起历史</button>{history.length===0 && <p>暂无对局</p>}{history.map(row=><p key={row.id}>{row.opponent?.nickname ?? '对手'}（ID {row.opponent?.id}） · {new Date(row.started).toLocaleString()} · {row.result==='red'?'红方胜':row.result==='black'?'黑方胜':row.result==='draw'?'和棋':row.result?.endsWith('-left')?'退出结束':row.result} · 用时 {Math.floor(row.duration/60000)}分{Math.floor(row.duration/1000)%60}秒</p>)}</section>}
+      {matchStats && <section aria-label="双方历史战绩"><strong>与 {matchStats.opponent.nickname}（ID {matchStats.opponent.id}）的历史战绩</strong><p>共 {matchStats.total} 局 · 你 {matchStats.wins} 胜 / {matchStats.losses} 负 / {matchStats.draws} 和</p><button onClick={()=>void api('/history',{opponentId:matchStats.opponent.id}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>查看双方历史对局</button></section>}
+      {history && <section aria-label="对局历史"><button onClick={()=>setHistory(null)}>收起历史</button>{history.length===0 && <p>暂无对局</p>}{active && <small>退出当前对战后可复盘分析。</small>}{history.map(row=><div key={row.id} style={{borderBottom:'1px solid #ddd',paddingBottom:8}}><p>{row.opponent?.nickname ?? '对手'}（ID {row.opponent?.id}） · {new Date(row.started).toLocaleString()} · {row.result==='red'?'红方胜':row.result==='black'?'黑方胜':row.result==='draw'?'和棋':row.result?.endsWith('-left')?'退出结束':row.result} · 用时 {Math.floor(row.duration/60000)}分{Math.floor(row.duration/1000)%60}秒</p>{row.ended && <button disabled={active || !row.hasRecord} onClick={()=>void api('/history/get',{id:row.id}).then(value=>latest.current.review?.(value.content)).catch(e=>setStatus(e.message))}>{row.hasRecord?'复盘分析':'无完整棋谱'}</button>}</div>)}</section>}
       {showFriends && <section aria-label="好友列表" style={{ display: 'grid', gap: 8 }}>
       <label>邀请时我执 <select aria-label="邀请执棋方" value={inviteSide} onChange={e=>setInviteSide(e.target.value as Side)}><option value="red">红方</option><option value="black">黑方</option></select></label>
       <label>下一局 <select aria-label="下一局执棋设置" value={swapSides?'swap':'keep'} onChange={e=>setSwapSides(e.target.value==='swap')}><option value="swap">红黑互换</option><option value="keep">保持执棋方</option></select></label>

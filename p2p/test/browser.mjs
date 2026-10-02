@@ -131,6 +131,8 @@ try {
   assert.equal(await red(a).getAttribute('style'), after, '重连保留局面');
   await a.getByRole('button', { name: '退出对局', exact: true }).click();
   await b.getByRole('status').filter({ hasText: '对局已结束' }).waitFor();
+  await b.getByRole('status').filter({hasText:'对方已退出'}).waitFor();
+  assert.equal(await b.getByRole('button',{name:'退出对局',exact:true}).count(),0,'对方退出后自动离开对战');
   await a.getByRole('button',{name:'对局历史',exact:true}).click();
   await a.getByRole('region',{name:'对局历史',exact:true}).getByText(/退出结束.*用时/).waitFor();
   await a.getByRole('button',{name:/^复盘分析/}).first().click();

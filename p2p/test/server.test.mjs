@@ -34,7 +34,10 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     const next=(await post('/history',{},a.token)).games;
     assert.equal(next.length,2);
     assert.equal(next[0].side,'black');
-    await post('/leave',{gameId:next[0].id},a.token);
+    const left=await post('/leave',{gameId:next[0].id},a.token);
+    assert.equal(left.stats.total,1);assert.equal(left.stats.wins,1);assert.equal(left.stats.losses,0);
+    assert.equal((await post('/history',{opponentId:b.id},a.token)).games.length,2);
+    assert.equal((await post('/history',{opponentId:b.id},a.token)).games.find(row=>row.id===game.gameId).hasRecord,true);
     assert.equal((await post('/history',{},b.token)).games[0].result,'black-left');
     clock+=1;
     const keepInvite=await post('/invite',{to:b.name,side:'black',swapSides:false},a.token);
