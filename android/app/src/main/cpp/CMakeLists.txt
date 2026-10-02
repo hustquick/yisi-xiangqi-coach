@@ -26,3 +26,4 @@ target_compile_options(pikafish_jni PRIVATE
 find_library(LOG_LIBRARY log)
 find_library(ANDROID_LIBRARY android)
 target_link_libraries(pikafish_jni PRIVATE ${LOG_LIBRARY} ${ANDROID_LIBRARY})
+target_link_options(pikafish_jni PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
