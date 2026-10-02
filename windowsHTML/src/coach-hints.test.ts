@@ -2,6 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { coachHints, coachPlan, xiangqiPieceLabel } from './coach-hints.ts';
 
+test('有保护的马被炮攻击不自动列为战术警报', () => {
+  const pieces = [{ id: 'r', name: '马', side: 'red' as const, x: 7, y: 9 }, { id: 'c', name: '炮', side: 'black' as const, x: 1, y: 2 }, { id: 'd', name: '车', side: 'red' as const, x: 8, y: 9 }];
+  const plan = coachPlan(pieces, 'red', (p, x, y) => x === 7 && y === 9 && (p.id === 'c' || p.id === 'd'), () => false, [], uci => uci);
+  assert.ok(!plan.some(p => p.title === '战术警报'));
+});
+
 test('比较同深度候选，按合法主变化列出双方应对', () => {
   const pieces = [{ id: 'r', name: '车', side: 'red' as const, x: 0, y: 9 }, { id: 'b', name: '车', side: 'black' as const, x: 8, y: 0 }];
   const lines = [

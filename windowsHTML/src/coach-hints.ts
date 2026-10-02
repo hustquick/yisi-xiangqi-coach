@@ -12,19 +12,22 @@ export function coachPlan(pieces: Piece[], side: Side, legal: (piece: Piece, x: 
     return attackers.length ? [{ target, attacker: attackers.sort((a, b) => (material[a.name] ?? 100) - (material[b.name] ?? 100))[0] }] : [];
   }).sort((a, b) => material[b.target.name] - material[a.target.name]);
   if (check(side, pieces)) tips.push({ title: '第一任务：解将', text: '当前将帅受攻击。下列候选均需先满足解将；不能用普通进攻代替应将。' });
-  else if (threats[0]) {
-    const { target, attacker } = threats[0];
+  else for (const { target, attacker } of threats) {
     const afterCapture = pieces.filter(p => p.id !== target.id).map(p => p.id === attacker.id ? { ...p, x: target.x, y: target.y } : p);
     const defenders = afterCapture.filter(p => p.side === side && legal(p, target.x, target.y, afterCapture));
-    tips.push({ title: '优先检查的威胁', text: `${xiangqiPieceLabel(attacker, pieces)}当前可吃${xiangqiPieceLabel(target, pieces)}。${defenders.length ? `吃后${xiangqiPieceLabel(defenders[0], afterCapture)}可合法吃回；是否值得交换，还要看后续连续吃子和将军。` : '按当前局面模拟该次吃子，没有合法的立即吃回手段；优先比较避让、防守或更强反击。'}这是直接威胁检查，不是对手必走或必胜的判断。` });
+    // A defended equal-or-costlier exchange is not automatically an urgent threat.
+    if (defenders.length && (material[attacker.name] ?? 100) >= material[target.name] && !check(side, afterCapture)) continue;
+    tips.push({ title: '战术警报', text: `${xiangqiPieceLabel(target, pieces)}受${xiangqiPieceLabel(attacker, pieces)}攻击：${defenders.length ? `${xiangqiPieceLabel(defenders[0], afterCapture)}虽能吃回，但对方可用较低价值子交换。` : '被吃后暂无立即吃回手段。'}结合候选变化判断是否需要先处理。` });
+    break;
   }
   const sorted = [...lines].sort((a, b) => a.multipv - b.multipv);
   const best = sorted[0];
   if (!best) return tips;
   const mate = best.score.match(/mate\s+(-?\d+)/), cp = best.score.match(/cp\s+(-?\d+)/);
-  tips.push({ title: '局面判断', text: mate ? `深度 ${best.depth} 的搜索给出${Number(mate[1]) > 0 ? '己方有杀棋' : '己方面临杀棋'}，引擎杀棋距离为 ${Math.abs(Number(mate[1]))}；优先核对下面的强制变化。` : cp ? `当前行棋方视角 ${Number(cp[1]) >= 0 ? '+' : ''}${(Number(cp[1]) / 100).toFixed(2)}（深度 ${best.depth}）。正数有利于当前行棋方；这是局面评价，不是赢棋概率或实际多子数。` : `当前搜索深度 ${best.depth}，暂无可比较的数值评分。` });
+  tips.push({ title: '局面判断', text: mate ? `${Number(mate[1]) > 0 ? '有杀棋' : '需防杀棋'} · 搜索距离 ${Math.abs(Number(mate[1]))} · 深度 ${best.depth}` : cp ? `${side === 'red' ? '红方' : '黑方'}视角 ${Number(cp[1]) >= 0 ? '+' : ''}${(Number(cp[1]) / 100).toFixed(2)} · 深度 ${best.depth}${best.depth <= 8 ? ' · 初步分析，建议加深核对' : ''}` : `深度 ${best.depth} · 暂无评分` });
   let board = pieces.map(p => ({ ...p })), mover = side, gain = 0;
   const sequence: string[] = [], actions: string[] = [];
+  let purpose = '';
   for (const uci of best.pv.trim().split(/\s+/).slice(0, 4)) {
     if (!/^[a-i][0-9][a-i][0-9]$/.test(uci)) break;
     const x = uci.charCodeAt(0) - 97, y = 9 - Number(uci[1]), tx = uci.charCodeAt(2) - 97, ty = 9 - Number(uci[3]);
@@ -32,21 +35,27 @@ export function coachPlan(pieces: Piece[], side: Side, legal: (piece: Piece, x: 
     if (!moving || moving.side !== mover || !legal(moving, tx, ty, board)) break;
     const captured = board.find(p => p.x === tx && p.y === ty);
     const name = notation(uci, board);
+    if (!sequence.length && !captured) {
+      if (moving.name === '马' && moving.y === (side === 'red' ? 9 : 0)) purpose = '出动底线马，完成大子展开。';
+      else if (moving.name === '炮' && tx === 4 && x !== 4) purpose = '炮转中路，形成中炮配置。';
+      else if (moving.name === '车' && tx !== x) purpose = '横移车，调整占线。';
+      else if (['兵', '卒'].includes(moving.name) && ty !== y) purpose = `${(side === 'red' ? ty <= 4 : ty >= 5) && !(side === 'red' ? y <= 4 : y >= 5) ? '兵卒过河，增加横向活动能力。' : '挺兵卒，推进这一线路。'}`;
+    }
     sequence.push(`${mover === side ? '你' : '对手'}：${name}`);
     if (captured) { gain += (mover === side ? 1 : -1) * (material[captured.name] ?? 0); actions.push(`${name}吃${xiangqiPieceLabel(captured, board)}`); }
     board = board.filter(p => p.id !== captured?.id).map(p => p.id === moving.id ? { ...p, x: tx, y: ty } : p);
     if (check(mover === 'red' ? 'black' : 'red', board)) actions.push(`${name}将军`);
     mover = mover === 'red' ? 'black' : 'red';
   }
-  if (sequence.length) tips.push({ title: '建议走法与计算线', text: `${sequence.join(' → ')}。${actions.length ? `可核验要点：${actions.join('；')}。${gain ? `这段变化内的粗略子力交换净值为${gain > 0 ? '+' : ''}${gain.toFixed(1)}（车9、炮4.5、马4、兵卒1；不代表引擎评分，变化未必结束）。` : '这段变化内的粗略子力交换持平，不能仅凭吃子认定获利。'}` : '这段变化没有直接吃子或将军，暂不把“改善子力”等推测当作已证实的走法理由。'}可点击首选着法在棋盘逐步演示。` });
+  if (sequence.length) tips.push({ title: '建议走法与计算线', text: `${purpose}${sequence.join(' → ')}。${actions.length ? `${actions.join('；')}。局部交换${gain ? `净值 ${gain > 0 ? '+' : ''}${gain.toFixed(1)}` : '持平'}（粗略子力，变化可能未结束）。` : ''}` });
   const alternatives = sorted.slice(1, 3).filter(line => line.depth === best.depth);
   if (cp && alternatives.length) {
     const comparisons = alternatives.flatMap(line => {
       const value = line.score.match(/cp\s+(-?\d+)/); if (!value) return [];
       const loss = (Number(cp[1]) - Number(value[1])) / 100;
-      return [`${notation(line.pv.split(/\s+/)[0], pieces)}：${loss <= 0.1 ? '与首选接近，可作为备选' : `比首选低约 ${loss.toFixed(2)}，应优先检查它的对手回应`}`];
+      return [`${notation(line.pv.split(/\s+/)[0], pieces)}：${loss <= 0.1 ? '本次评分接近' : `相差 ${loss.toFixed(2)}`}`];
     });
-    if (comparisons.length) tips.push({ title: '备选与代价', text: comparisons.join('；') + '。仅比较同一搜索深度；分差不能直接换算成胜率。' });
+    if (comparisons.length) tips.push({ title: '备选与代价', text: comparisons.join('；') + '。' });
   }
   return tips;
 }
