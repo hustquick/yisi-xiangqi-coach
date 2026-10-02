@@ -2165,17 +2165,15 @@ export default function Home() {
                     : "计算中"}
             </b>
           </div>
-          <p className="coach-copy">
-            {selectedPiece
-              ? selectedEngineState === "ready"
+          {selectedPiece && <p className="coach-copy">
+            {selectedEngineState === "ready"
                 ? selectedIsGlobalBest
                   ? `这枚${selectedPiece.name}的首选 ${pieceOptions[0]?.move ?? ""} 与全局第一候选评分相同，属于全局最优着法。`
                   : `这枚${selectedPiece.name}内部首选是 ${pieceOptions[0]?.move ?? "无合法着法"}。绿色表示该棋子的皮卡鱼首选落点；当前评分低于全局首选。`
                 : selectedEngineState === "error"
                   ? "皮卡鱼限定搜索超时或当前模式不支持，已停止推荐，不会使用启发式分数代替。"
-                  : `皮卡鱼正在以深度 ${analysisDepth} 分析这枚棋子的全部合法着法。`
-              : analysis.detail}
-          </p>
+                  : `皮卡鱼正在以深度 ${analysisDepth} 分析这枚棋子的全部合法着法。`}
+          </p>}
           <section aria-label="局面提示" className="global-advice">
             {coachPlan(pieces, turn, isLegal, isInCheck, engineState === 'ready' ? engineLines : [], uciMoveToName).map(hint => <div key={hint.title}><strong>{hint.title}</strong><p>{hint.text}</p></div>)}
             {engineState !== 'ready' && <p>正在计算候选着法；以上仅提示当前棋盘可核验的直接威胁，不提前评价走法优劣。</p>}
