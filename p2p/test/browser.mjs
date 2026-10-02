@@ -9,6 +9,7 @@ try {
   const stamp = Date.now();
   for (const [page, suffix] of [[a, 'a'], [b, 'b']]) {
     await page.goto(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080');
+    assert.equal(await page.getByLabel('连接服务', { exact: true }).count(), 0, '用户界面不暴露服务器设置');
     await page.getByLabel('网络账号', { exact: true }).fill(`test${stamp}${suffix}`);
     await page.getByLabel('网络密码', { exact: true }).fill('browser-test-password');
     await page.getByRole('button', { name: '注册并上线', exact: true }).click();

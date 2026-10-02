@@ -10,7 +10,6 @@ export function useNetworkGame(options: {
   receive: (from: [number, number], to: [number, number]) => boolean;
 }) {
   const latest = useRef(options); latest.current = options;
-  const [url, setUrl] = useState('http://localhost:8790');
   const [name, setName] = useState(''), [password, setPassword] = useState('');
   const [users, setUsers] = useState<Array<{ name: string; busy: boolean }>>([]);
   const [status, setStatus] = useState('未登录'), [logged, setLogged] = useState(false);
@@ -121,8 +120,12 @@ export function useNetworkGame(options: {
   async function login(register: boolean) {
     try {
       if (active) throw new Error('请先退出当前对局');
-      const endpoint = new URL(url); if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.pathname !== '/') throw new Error('请填写服务根地址');
-      if (endpoint.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) throw new Error('公网账号登录必须使用 HTTPS');
+      // Deployment configuration belongs to the application, never to the player UI.
+      const configured = document.querySelector<HTMLMetaElement>('meta[name="yisi-network-endpoint"]')?.content;
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+      const endpoint = new URL(configured || (local ? 'http://localhost:8790' : window.location.origin));
+      if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.pathname !== '/' || endpoint.username || endpoint.password) throw new Error('网络对战配置异常，请联系管理员');
+      if (endpoint.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) throw new Error('网络对战尚未开放安全连接，请稍后再试');
       session.current.url = endpoint.origin;
       const result = await api(register ? '/register' : '/login', { name, password });
       session.current = { ...session.current, ...result }; setPassword(''); setLogged(true); setStatus('已登录 · 等待邀请');
@@ -151,14 +154,13 @@ export function useNetworkGame(options: {
   }
   const panel = <details className="collapsible-module network-panel" open><summary>网络对战 · 注册 / 邀请好友</summary><div className="collapsible-content" style={{ display: 'grid', gap: 8 }}>
     <style>{`.network-panel label{display:grid;gap:6px;font-size:13px;color:#365a47}.network-panel input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 10px;border:1px solid #d9d3c4;border-radius:8px;background:#fff;font:inherit}.network-panel button{min-height:38px;padding:7px 12px;margin:3px 3px 3px 0;border:1px solid #c9d4c9;border-radius:8px;background:#edf3ed;color:#245f43;font:inherit;cursor:pointer}.network-panel button:disabled{opacity:.45;cursor:default}.network-panel p{font-size:14px;overflow-wrap:anywhere}.network-panel small{color:#77746b;line-height:1.6}`}</style>
-    <label>连接服务 <input aria-label="连接服务" value={url} disabled={logged} onChange={e => setUrl(e.target.value)} placeholder="https://你的域名" /></label>
     {!logged && <><label>账号 <input aria-label="网络账号" autoComplete="username" value={name} onChange={e => setName(e.target.value)} /></label><label>密码 <input aria-label="网络密码" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></label><div><button onClick={() => void login(true)}>注册并上线</button> <button onClick={() => void login(false)}>登录</button></div></>}
     <p role="status">{status}{active ? ` · 你执${side === 'red' ? '红' : '黑'}` : ''}</p>
     {logged && !active && <><small>邀请方执红，接受方执黑；新对局从标准初始局面开始。</small>{users.filter(u => u.name !== session.current.name).map(u => <button key={u.name} disabled={u.busy} onClick={() => void api('/invite', { to: u.name }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请 {u.name}{u.busy ? '（对局中）' : ''}</button>)}</>}
     {invitation && !active && <div>{invitation.from} 邀请你对战 <button onClick={() => void api('/respond', { id: invitation.id, accept: true }).catch(e => setStatus(e.message))}>接受</button> <button onClick={() => void api('/respond', { id: invitation.id, accept: false }).then(() => setInvitation(null)).catch(e => setStatus(e.message))}>拒绝</button></div>}
     {active && <div><button disabled={connected} onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button> <button onClick={() => void leave()}>退出对局</button></div>}
     {logged && <div><button onClick={() => void subscribe().catch(e => setStatus(e.message))}>恢复在线</button> <button disabled={active} onClick={() => void api('/logout', {}).then(() => { events.current?.abort(); setLogged(false); setUsers([]); session.current.token = ''; setStatus('已退出登录'); }).catch(e => setStatus(e.message))}>退出登录</button></div>}
-    <small>走棋经加密通道传输，优先直连，无法直连时使用服务配置的中继。联网对战期间禁用单方悔棋、摆盘和载入；该版本不提供防引擎作弊排名。</small>
+    <small>联网对战期间不可单方悔棋、摆盘或载入棋谱。断线后可重连继续；该版本暂不提供竞技排名。</small>
   </div></details>;
   return { active, side, connected, sendMove, panel };
 }
