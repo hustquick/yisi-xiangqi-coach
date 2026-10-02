@@ -19,14 +19,17 @@ try {
     await page.getByRole('status').filter({ hasText: '两次输入的密码不一致' }).waitFor();
     await page.getByLabel('确认密码', { exact: true }).fill('1');
     await page.getByRole('button', { name: '注册并上线', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: '已登录' }).waitFor();
-    await page.getByRole('button', { name: '退出登录', exact: true }).click();
+    await page.getByRole('combobox', { name: '账户状态', exact: true }).waitFor();
+    await page.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0);
     await page.getByLabel('网络密码', { exact: true }).fill('1');
     await page.getByRole('button', { name: '登录并上线', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: '已登录' }).waitFor();
+    await page.getByRole('combobox', { name: '账户状态', exact: true }).waitFor();
   }
+  assert.equal(await b.getByRole('button', { name: '账户信息', exact: true }).count(), 0);
+  assert.equal(await b.getByRole('button', { name: '恢复在线', exact: true }).count(), 0);
+  assert.equal(await b.getByRole('button', { name: '好友列表', exact: true }).count(), 1);
   await a.getByRole('button', { name: /^好友列表/ }).click();
   await a.getByLabel('搜索好友账号', { exact: true }).fill(`test${stamp}b`);
   await a.getByRole('button', { name: '搜索', exact: true }).click();
@@ -35,12 +38,12 @@ try {
   await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
   await friendRow.getByRole('button', { name: '好友信息', exact: true }).click();
   await friendRow.getByText(`好友账号：test${stamp}b`, { exact: true }).waitFor();
-  await b.getByRole('button', { name: '隐身', exact: true }).click();
+  await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('invisible');
   await friendRow.getByText(`test${stamp}b · 离线`, { exact: true }).waitFor();
   assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
-  await b.getByRole('button', { name: '在线', exact: true }).click();
+  await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('online');
   await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
-  await b.getByRole('button', { name: '退出登录', exact: true }).click();
+  await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
   await friendRow.getByText(`test${stamp}b · 离线`, { exact: true }).waitFor();
   assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
   await b.getByLabel('网络密码', { exact: true }).fill('1');
