@@ -1136,6 +1136,8 @@ export default function Home() {
   const network = useNetworkGame({
     position: positionFen(pieces, turn, activePly), ply: activePly, turn,
     start: () => { setGameMode("local"); reset(true); },
+    record: () => ({version:SAVED_GAME_VERSION,record:{title:recordTitle,pieces:startingPieces,turn:startingTurn,moves:history.map(move=>({from:move.from,to:move.to}))},activePly:0}),
+    review: saved => { installRecord(saved.record,{},0); setOutcomeOpen(false); },
     receive: (from, to) => {
       const piece = pieces.find(p => p.x === from[0] && p.y === from[1]);
       if (!piece || piece.side !== turn || outcome || !isLegal(piece, to[0], to[1], pieces)) return false;
@@ -1149,6 +1151,9 @@ export default function Home() {
   const [setupMessage, setSetupMessage] = useState("");
   const [showBestArrows, setShowBestArrows] = useState(false);
   const [boardFlipped, setBoardFlipped] = useState(false);
+  useEffect(() => {
+    if (network.active) setBoardFlipped(network.side === 'black');
+  }, [network.active, network.side]);
   const [variationPreview, setVariationPreview] =
     useState<VariationPreview | null>(null);
   const [previewedCandidateMove, setPreviewedCandidateMove] = useState<
@@ -1179,6 +1184,12 @@ export default function Home() {
   const selectedRequestRef = useRef(100000);
   const outcome = gameMode === "setup" ? null : xiangqiOutcome(pieces, turn);
   const outcomeTitle = outcome?.title;
+  useEffect(() => {
+    if (network.active && outcomeTitle) {
+      const timer = setTimeout(() => { void network.finishRound(outcomeTitle.startsWith('红') ? 'red' : 'black').catch(console.error); }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [network.active, outcomeTitle]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1393,8 +1404,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!workerRef.current || !engineConnected) return;
-    if (gameMode === "setup" || outcomeTitle) {
+    if (network.active || gameMode === "setup" || outcomeTitle) {
       workerRef.current.postMessage({ type: "stop" });
+      if(network.active) { requestRef.current++;selectedRequestRef.current++;backfillRef.current.id++;setEngineLines([]);setSelectedEngineLines([]);setShowBestArrows(false);setVariationPreview(null);setTimelinePreviewPly(null); }
       return;
     }
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -1421,11 +1433,12 @@ export default function Home() {
       workerRef.current?.postMessage({ type: "stop" });
       setEngineState("error");
     }, 45000);
-  }, [pieces, turn, activePly, analysisDepth, engineConnected, gameMode, humanSide, computerElo, outcomeTitle]);
+  }, [pieces, turn, activePly, analysisDepth, engineConnected, gameMode, humanSide, computerElo, outcomeTitle,network.active]);
 
   useEffect(() => {
     if (
       !workerRef.current ||
+      network.active ||
       !engineConnected ||
       engineState !== "ready" ||
       selectedPiece ||
@@ -1464,13 +1477,14 @@ export default function Home() {
     positionScores,
     startingPieces,
     startingTurn,
+    network.active,
   ]);
 
   useEffect(() => {
     if (selectedTimeoutRef.current) clearTimeout(selectedTimeoutRef.current);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- selection changes start a new external engine request.
     setSelectedEngineLines([]);
-    if (gameMode === "setup" || !selectedPiece) {
+    if (network.active || gameMode === "setup" || !selectedPiece) {
       setSelectedEngineState("idle");
       return;
     }
@@ -1512,6 +1526,7 @@ export default function Home() {
     analysisDepth,
     engineState,
     gameMode,
+    network.active,
   ]);
 
   useEffect(() => {
@@ -1916,7 +1931,7 @@ export default function Home() {
         <div className="board-wrap" ref={boardSectionRef}>
           <div className="board-top">
             <div className="history-tools"><button onClick={undo} disabled={activePly === 0} aria-label="悔棋">↶</button><button onClick={() => goToPly(activePly + 1)} disabled={activePly >= history.length} aria-label="前进">↷</button></div>
-            <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={engineState !== "ready" || !candidates.length} aria-label="显示最优着法">优</button>
+            <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={network.active || engineState !== "ready" || !candidates.length} aria-label="显示最优着法">优</button>
             <div className="turn-label">
               <b className={turn === "red" ? "active red-turn" : "black-turn"}>
                 {turn === "red" ? "红方" : "黑方"}
@@ -1953,7 +1968,7 @@ export default function Home() {
               <span>{boardFlipped ? "漢 界" : "楚 河"}</span>
               <span>{boardFlipped ? "楚 河" : "漢 界"}</span>
             </div>
-            {!previewingBoard && showBestArrows && engineState === "ready" && (
+            {!network.active && !previewingBoard && showBestArrows && engineState === "ready" && (
               <CandidateArrows
                 candidates={candidates}
                 pieces={pieces}
@@ -1962,7 +1977,7 @@ export default function Home() {
             )}
             {Array.from({ length: 10 }).map((_, y) =>
               Array.from({ length: 9 }).map((__, x) => {
-                const rank = previewingBoard
+                const rank = network.active || previewingBoard
                   ? -1
                   : pieceOptions.findIndex(
                       (c) => c.to?.[0] === x && c.to?.[1] === y,
@@ -1984,7 +1999,7 @@ export default function Home() {
             )}
             {displayPieces.map((p) => {
               const targetRank =
-                !previewingBoard &&
+                !network.active && !previewingBoard &&
                 selectedPiece &&
                 p.side !== selectedPiece.side
                   ? pieceOptions.findIndex(
@@ -2123,7 +2138,7 @@ export default function Home() {
         </div>
 
         <div className="coach-sidebar">
-        <Collapsible title="教练分析" open><aside className="right-panel panel">
+        {!network.active && <Collapsible title="教练分析" open><aside className="right-panel panel">
           <div className="panel-title">
             <span>01</span>
             <div>
@@ -2264,8 +2279,8 @@ export default function Home() {
             <strong>{analysis.principle}</strong>
             <p>请结合对手下一步最强回应，再决定后续计划。</p>
           </div>
-        </aside></Collapsible>
-      <Collapsible title="局势图"><SituationChart
+        </aside></Collapsible>}
+      {!network.active && <Collapsible title="局势图"><SituationChart
         points={evaluationPoints}
         history={history}
         analyzing={engineState === "loading" || engineState === "thinking"}
@@ -2274,13 +2289,13 @@ export default function Home() {
         onPreviewPly={previewTimeline}
         onSelectPly={goToPly}
         startingPieces={startingPieces}
-      /></Collapsible>
+      /></Collapsible>}
 
       {network.panel}
       <Collapsible title="对弈与分析设置"><section className="game-mode-card panel" aria-label="对弈与分析设置">
         <div className="game-mode-bar">{(["local", "computer", "setup"] as GameMode[]).map((mode) => <button key={mode} className={gameMode === mode ? "active" : ""} onClick={() => changeGameMode(mode)}>{mode === "local" ? "双人对弈" : mode === "computer" ? "人机对战" : "摆盘"}</button>)}</div>
         {gameMode === "computer" && <div className="computer-options"><button className="side-choice" onClick={() => { setHumanSide((side) => side === "red" ? "black" : "red"); aiPositionRef.current=""; }}>我执{humanSide === "red" ? "红" : "黑"}</button><label className="level-choice"><span>电脑等级</span><select value={computerElo} onChange={(event) => {setComputerElo(Number(event.target.value));aiPositionRef.current="";}}>{[["业余一级",1320],["业余三级",1500],["业余五级",1700],["业余七级",1900],["业余九级",2100],["专业一级",2300],["专业三级",2500],["专业五级",2700],["专业七级",2900],["专业九级",3100]].map(([name,elo]) => <option key={elo} value={elo}>{name} · Elo {elo}</option>)}</select></label></div>}
-        <div className="depth-setting"><div><strong>分析深度</strong><small>修改后从当前局面重新计算</small></div><div className="depth-options">{DEPTH_OPTIONS.map((depth) => <button key={depth} className={depth === analysisDepth ? "active" : ""} onClick={() => changeDepth(depth)} aria-pressed={depth === analysisDepth}>{depth}</button>)}</div></div>
+        <div className="depth-setting" style={{display:'grid',gap:8}}><div><strong>分析深度</strong><small>修改后从当前局面重新计算</small></div><div className="depth-options" style={{display:'flex',flexWrap:'wrap'}}>{DEPTH_OPTIONS.map((depth) => <button key={depth} className={depth === analysisDepth ? "active" : ""} onClick={() => changeDepth(depth)} aria-pressed={depth === analysisDepth}>{depth}</button>)}</div></div>
         {gameMode === "setup" && <div className="setup-panel"><div className="setup-actions"><button className={setupBrush === "move" ? "active" : ""} onClick={() => setSetupBrush("move")}>移动</button><button className={setupBrush === "erase" ? "active" : ""} onClick={() => setSetupBrush("erase")}>删除</button><button onClick={() => setTurn((side) => side === "red" ? "black" : "red")}>{turn === "red" ? "红方先行" : "黑方先行"}</button><button className="finish" onClick={finishSetup}>完成摆盘</button></div>{(["red", "black"] as Side[]).map((side) => <div className={`setup-pieces ${side}`} key={side}><span>{side === "red" ? "红方" : "黑方"}</span>{setupPieces[side].map((name) => {const active=typeof setupBrush === "object" && setupBrush.side === side && setupBrush.name === name;return <button key={name} className={active ? "active" : ""} onClick={() => setSetupBrush({side,name})}>{name}</button>;})}</div>)}</div>}
       </section></Collapsible>
 
@@ -2306,7 +2321,7 @@ export default function Home() {
           <span>已走回合</span>
         </div>
         <div>
-          <b>{activePly ? analysis.grade : "—"}</b>
+          <b>{!network.active && activePly ? analysis.grade : "—"}</b>
           <span>本步质量</span>
         </div>
         <div className="moves">
@@ -2345,7 +2360,7 @@ export default function Home() {
           Pikafish · GPL-3.0
         </a>
       </footer>
-      {outcome && outcomeOpen && <div className="result-backdrop"><section className="result-modal" role="alertdialog" aria-modal="true" aria-labelledby="result-title"><div className="result-mark">胜</div><h2 id="result-title">{outcome.title}</h2><p>{outcome.detail}</p><div><button className="primary" onClick={reset}>再来一局</button><button onClick={() => setOutcomeOpen(false)}>查看棋局</button></div></section></div>}
+      {outcome && outcomeOpen && <div className="result-backdrop"><section className="result-modal" role="alertdialog" aria-modal="true" aria-labelledby="result-title"><div className="result-mark">胜</div><h2 id="result-title">{outcome.title}</h2><p>{outcome.detail}</p>{network.active && <p>双方确认结束后，按邀请设置自动开始下一局；可在网络对战中退出。</p>}<div>{!network.active && <button className="primary" onClick={reset}>再来一局</button>}<button onClick={() => setOutcomeOpen(false)}>查看棋局</button></div></section></div>}
     </main>
   );
 }

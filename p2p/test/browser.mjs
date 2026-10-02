@@ -38,6 +38,7 @@ try {
     await page.getByLabel('确认密码', { exact: true }).fill('1');
     await page.getByRole('button', { name: '注册', exact: true }).click();
     await page.getByRole('combobox', { name: '账户状态', exact: true }).waitFor();
+    assert.equal(await page.getByRole('combobox',{name:'账户状态',exact:true}).inputValue(),'online','注册直接登录在线');
     await page.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0);
@@ -64,33 +65,43 @@ try {
   await a.getByLabel('搜索好友账号', { exact: true }).fill(`test${stamp}b`);
   await a.getByRole('button', { name: '搜索', exact: true }).click();
   await a.getByRole('button', { name: '添加好友', exact: true }).click();
+  await b.getByRole('button',{name:'同意好友申请',exact:true}).click();
   const friendRow = a.locator(`[data-friend="test${stamp}b"]`);
-  await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
+  await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
   await friendRow.getByRole('button', { name: '好友信息', exact: true }).click();
   await friendRow.getByText(`好友账号：test${stamp}b`, { exact: true }).waitFor();
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('invisible');
-  await friendRow.getByText(`test${stamp}b · 离线`, { exact: true }).waitFor();
+  await friendRow.locator('span').filter({hasText:'离线'}).waitFor();
   assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('online');
-  await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
+  await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
   await b.getByRole('combobox', { name: '账户状态', exact: true }).selectOption('logout');
-  await friendRow.getByText(`test${stamp}b · 离线`, { exact: true }).waitFor();
+  await friendRow.locator('span').filter({hasText:'离线'}).waitFor();
   assert.equal(await friendRow.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).isDisabled(), true);
   await b.getByLabel('网络密码', { exact: true }).fill('1');
   await b.getByRole('button', { name: '登录', exact: true }).click();
-  await friendRow.getByText(`test${stamp}b · 在线`, { exact: true }).waitFor();
+  await friendRow.locator('span').filter({hasText:'在线'}).waitFor();
   await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
   await a.getByRole('status').filter({ hasText: '邀请已发出，等待对手接受' }).waitFor();
   await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
   await a.getByRole('status').filter({ hasText: '邀请已发出，请等待对手回应' }).waitFor();
+  if(process.env.P2P_TEST_QUICK!=='1') {
   await b.context().setOffline(true);
   await b.evaluate(() => window.__cutEvents());
   await b.getByRole('status').filter({ hasText: '正在恢复在线连接' }).waitFor();
   await b.context().setOffline(false);
   await a.getByRole('status').filter({ hasText: '邀请已失效' }).waitFor({ timeout: 80_000 });
   await a.getByRole('button', { name: `邀请 test${stamp}b`, exact: true }).click();
+  }
+  await b.getByRole('alert',{name:'对战邀请',exact:true}).waitFor();
+  await b.waitForFunction(()=>document.activeElement?.textContent==='接受');
+  assert.equal(await b.locator('.network-panel').evaluate(el=>el.open),true);
   await b.getByRole('button', { name: '接受', exact: true }).click();
   for (const page of [a, b]) await page.getByRole('status').filter({ hasText: '双方局面一致' }).waitFor({ timeout: 30000 });
+  assert.equal(await a.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
+  assert.equal(await a.getByText('教练分析',{exact:true}).count(),0);
+  assert.equal(await a.getByText('局势图',{exact:true}).count(),0);
+  assert.ok(await b.getByRole('button',{name:'黑将',exact:true}).evaluate(el=>parseFloat(el.style.top)>90),'执黑时黑将在下方');
   if (process.env.P2P_TEST_RELAY === '1') {
     for (const page of [a, b]) assert.equal(await page.evaluate(async () => {
       const stats = await window.__testPeers.at(-1).getStats();
@@ -106,7 +117,7 @@ try {
   }
   const red = page => page.getByRole('button', { name: '红兵', exact: true }).first();
   await move(a, '红兵', '0,5');
-  await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
+  await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
   const after = await red(a).getAttribute('style');
   await a.getByRole('button', { name: '重开', exact: true }).click();
   assert.equal(await red(a).getAttribute('style'), after, '联网禁止单方重开');
@@ -120,6 +131,10 @@ try {
   assert.equal(await red(a).getAttribute('style'), after, '重连保留局面');
   await a.getByRole('button', { name: '退出对局', exact: true }).click();
   await b.getByRole('status').filter({ hasText: '对局已结束' }).waitFor();
+  await a.getByRole('button',{name:'对局历史',exact:true}).click();
+  await a.getByRole('region',{name:'对局历史',exact:true}).getByText(/退出结束.*用时/).waitFor();
+  await a.getByRole('button',{name:/^复盘分析/}).first().click();
+  await a.getByRole('status').filter({hasText:'已载入'}).waitFor();
   assert.deepEqual(errors, []);
   console.log('PASS cloud registration + invitation + real WebRTC + two legal moves + reset lock + reconnect + leave');
 } finally { await browser.close(); }
