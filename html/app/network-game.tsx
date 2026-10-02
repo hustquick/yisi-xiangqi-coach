@@ -271,14 +271,16 @@ export function useNetworkGame(options: {
         </label>
       </section>
       <button aria-expanded={showFriends} onClick={() => setShowFriends(value => !value)}>好友列表</button>
+      {!active && <div aria-label="邀请对战设置" style={{display:'flex',flexWrap:'wrap',gap:12}}>
+        <label>本局执棋<select aria-label="邀请执棋方" style={{font:'inherit',padding:8,minHeight:40}} value={inviteSide} onChange={e=>setInviteSide(e.target.value as Side)}><option value="red">执红</option><option value="black">执黑</option></select></label>
+        <label>后续对局<select aria-label="下一局执棋设置" style={{font:'inherit',padding:8,minHeight:40}} value={swapSides?'swap':'keep'} onChange={e=>setSwapSides(e.target.value==='swap')}><option value="swap">交替执棋</option><option value="keep">一直执{inviteSide==='red'?'红':'黑'}</option></select></label>
+      </div>}
       <button onClick={()=>setShowFriends(true)}>邀请对战</button>
       {requests.map(request=><div key={request.name}>{request.nickname}（ID {request.id}）申请添加好友 <button onClick={()=>void api('/friends/respond',{name:request.name,accept:true}).catch(e=>setStatus(e.message))}>同意好友申请</button><button onClick={()=>void api('/friends/respond',{name:request.name,accept:false}).catch(e=>setStatus(e.message))}>拒绝好友申请</button></div>)}
       <button onClick={()=>void api('/history',{}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>对局历史</button>
       {matchStats && <section aria-label="双方历史战绩"><strong>与 {matchStats.opponent.nickname}（ID {matchStats.opponent.id}）的历史战绩</strong><p>共 {matchStats.total} 局 · 你 {matchStats.wins} 胜 / {matchStats.losses} 负 / {matchStats.draws} 和</p><button onClick={()=>void api('/history',{opponentId:matchStats.opponent.id}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>查看双方历史对局</button></section>}
       {history && <section aria-label="对局历史"><button onClick={()=>setHistory(null)}>收起历史</button>{history.length===0 && <p>暂无对局</p>}{active && <small>退出当前对战后可复盘分析。</small>}{history.map(row=><div key={row.id} style={{borderBottom:'1px solid #ddd',paddingBottom:8}}><p>{row.opponent?.nickname ?? '对手'}（ID {row.opponent?.id}） · {new Date(row.started).toLocaleString()} · {row.result==='red'?'红方胜':row.result==='black'?'黑方胜':row.result==='draw'?'和棋':row.result?.endsWith('-left')?'退出结束':row.result} · 用时 {Math.floor(row.duration/60000)}分{Math.floor(row.duration/1000)%60}秒</p>{row.ended && <button disabled={active || !row.hasRecord} onClick={()=>void api('/history/get',{id:row.id}).then(value=>latest.current.review?.(value.content)).catch(e=>setStatus(e.message))}>{row.hasRecord?'复盘分析':'无完整棋谱'}</button>}</div>)}</section>}
       {showFriends && <section aria-label="好友列表" style={{ display: 'grid', gap: 8 }}>
-      <label>邀请时我执 <select aria-label="邀请执棋方" value={inviteSide} onChange={e=>setInviteSide(e.target.value as Side)}><option value="red">红方</option><option value="black">黑方</option></select></label>
-      <label>下一局 <select aria-label="下一局执棋设置" value={swapSides?'swap':'keep'} onChange={e=>setSwapSides(e.target.value==='swap')}><option value="swap">红黑互换</option><option value="keep">保持执棋方</option></select></label>
       <form onSubmit={e => { e.preventDefault(); void searchFriend(); }} style={{ display: 'grid', gap: 6 }}>
         <label>搜索用户 <input aria-label="搜索好友账号" required maxLength={32} value={friendQuery} onChange={e => { setFriendQuery(e.target.value); setFoundFriend(null); setFriendMessage(''); }} placeholder="输入数字ID或名称" /></label>
         <button disabled={friendBusy} type="submit">搜索</button>
