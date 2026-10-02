@@ -17,8 +17,12 @@ const fail = (status, message) => Object.assign(new Error(message), { status });
 export function createSignalingServer({ database = 'accounts.sqlite', origins = [], iceServers = [], turnSecret = '', turnHost = '', now = Date.now } = {}) {
   const db = new DatabaseSync(database);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS users (name TEXT PRIMARY KEY COLLATE NOCASE, salt TEXT NOT NULL, hash TEXT NOT NULL)');
+  db.exec('CREATE TABLE IF NOT EXISTS friends (owner TEXT NOT NULL, friend TEXT NOT NULL, PRIMARY KEY (owner, friend))');
+  db.exec('CREATE TABLE IF NOT EXISTS presence_preferences (name TEXT PRIMARY KEY, invisible INTEGER NOT NULL DEFAULT 0)');
   const sessions = new Map(), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
   const nameKey = name => name.toLowerCase();
+  const invisible = name => !!db.prepare('SELECT invisible FROM presence_preferences WHERE name = ?').get(name)?.invisible;
+  const visibleOnline = name => streams.has(name) && !invisible(name);
   function connectionServers(name) {
     if (!turnSecret || !turnHost) return iceServers;
     const username = `${Math.floor(now() / 1000) + 3600}:${name}`;
@@ -36,10 +40,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     stream.write(`data: ${JSON.stringify(data)}\n\n`);
     return true;
   }
-  function onlineList() {
-    return [...streams.keys()].map(name => ({ name, busy: [...games.values()].some(g => g.members.includes(name)) }));
+  function friendList(owner) {
+    return db.prepare('SELECT friend FROM friends WHERE owner = ? ORDER BY friend').all(owner).map(row => ({ name: row.friend, online: visibleOnline(row.friend), busy: visibleOnline(row.friend) && busy(row.friend) }));
   }
-  function broadcastPresence() { for (const name of streams.keys()) send(name, { type: 'presence', users: onlineList() }); }
+  function broadcastPresence() { for (const name of streams.keys()) send(name, { type: 'presence', users: friendList(name) }); }
   function busy(name) { return [...games.values()].some(g => g.members.includes(name)); }
   function rateLimit(key, max, window = 60_000) {
     const entry = limits.get(key);
@@ -74,8 +78,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (req.method === 'POST' && ['/register', '/login'].includes(path)) {
         rateLimit(`auth:${req.socket.remoteAddress}`, 15);
         const { name, password } = await body(req);
-        if (typeof name !== 'string' || !usernamePattern.test(name) || typeof password !== 'string' || password.length < 10 || password.length > 128)
-          throw fail(400, '账号须为 1–32 位字母开头的字母、数字、下划线或短横线；密码须为 10–128 位');
+        if (typeof name !== 'string' || !usernamePattern.test(name))
+          throw fail(400, '账号须为 1–32 位字母开头的字母、数字、下划线或短横线');
+        if (typeof password !== 'string' || password.length === 0 || password.length > 128)
+          throw fail(400, '请输入密码，最多 128 个字符；不要求数字、大小写或特殊符号');
         const canonical = nameKey(name);
         let user = db.prepare('SELECT * FROM users WHERE name = ?').get(canonical);
         if (path === '/register') {
@@ -94,7 +100,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if (previous) { send(canonical, { type: 'signed-out' }); previous.end(); streams.delete(canonical); }
         const accessToken = token();
         sessions.set(accessToken, { name: canonical, expires: now() + 12 * 60 * 60_000 });
-        json(res, 200, { token: accessToken, name: canonical, iceServers: connectionServers(canonical) }); return;
+        json(res, 200, { token: accessToken, name: canonical, presence: invisible(canonical) ? 'invisible' : 'online', iceServers: connectionServers(canonical) }); return;
       }
       const session = authenticate(req), name = session.name;
       if (req.method === 'GET' && path === '/events') {
@@ -115,6 +121,29 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (req.method !== 'POST') throw fail(404, '接口不存在');
       rateLimit(`api:${name}`, 240);
       const data = await body(req);
+      if (path === '/presence') {
+        if (!['online', 'invisible'].includes(data.mode)) throw fail(400, '账户状态错误');
+        db.prepare('INSERT INTO presence_preferences VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET invisible=excluded.invisible').run(name, data.mode === 'invisible' ? 1 : 0);
+        broadcastPresence(); json(res, 200, { presence: data.mode }); return;
+      }
+      if (path === '/friends') { json(res, 200, { friends: friendList(name) }); return; }
+      if (path === '/search') {
+        rateLimit(`search:${name}`, 30);
+        const query = typeof data.name === 'string' ? nameKey(data.name.trim()) : '';
+        if (!usernamePattern.test(query)) throw fail(400, '请输入完整好友账号');
+        const found = db.prepare('SELECT name FROM users WHERE name = ?').get(query);
+        json(res, 200, { user: found && found.name !== name ? { name: found.name, online: visibleOnline(found.name), busy: visibleOnline(found.name) && busy(found.name), added: !!db.prepare('SELECT 1 FROM friends WHERE owner = ? AND friend = ?').get(name, found.name) } : null }); return;
+      }
+      if (path === '/friends/add' || path === '/friends/remove') {
+        const friend = typeof data.name === 'string' ? nameKey(data.name.trim()) : '';
+        if (!usernamePattern.test(friend) || friend === name || !db.prepare('SELECT 1 FROM users WHERE name = ?').get(friend)) throw fail(400, '好友账号不存在');
+        if (path === '/friends/add') {
+          if (friendList(name).length >= 200 && !db.prepare('SELECT 1 FROM friends WHERE owner = ? AND friend = ?').get(name, friend)) throw fail(400, '好友数量已达上限');
+          db.prepare('INSERT OR IGNORE INTO friends VALUES (?, ?)').run(name, friend);
+        } else db.prepare('DELETE FROM friends WHERE owner = ? AND friend = ?').run(name, friend);
+        send(name, { type: 'presence', users: friendList(name) });
+        json(res, 200, { friends: friendList(name) }); return;
+      }
       if (path === '/ice') { json(res, 200, { iceServers: connectionServers(name) }); return; }
       if (path === '/logout') {
         for (const [key, s] of sessions) if (s.name === name) sessions.delete(key);
@@ -123,7 +152,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (path === '/invite') {
         rateLimit(`invite:${name}`, 10);
         const to = typeof data.to === 'string' ? nameKey(data.to) : '';
-        if (to === name || !streams.has(to) || !streams.has(name)) throw fail(400, '双方需要在线，且不能邀请自己');
+        if (to === name || !visibleOnline(to) || !streams.has(name)) throw fail(400, '好友当前不在线，或账号不能邀请自己');
         if (busy(name) || busy(to)) throw fail(409, '一方已在对局中');
         const id = randomUUID(), invite = { id, from: name, to, expires: now() + 60_000 };
         invites.set(id, invite); send(to, { type: 'invite', ...invite });

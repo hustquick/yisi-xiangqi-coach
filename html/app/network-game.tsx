@@ -11,7 +11,15 @@ export function useNetworkGame(options: {
 }) {
   const latest = useRef(options); latest.current = options;
   const [name, setName] = useState(''), [password, setPassword] = useState('');
-  const [users, setUsers] = useState<Array<{ name: string; busy: boolean }>>([]);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [confirmPassword, setConfirmPassword] = useState(''), [authBusy, setAuthBusy] = useState(false);
+  type Friend = { name: string; online: boolean; busy: boolean; added?: boolean };
+  const [users, setUsers] = useState<Friend[]>([]);
+  const [friendQuery, setFriendQuery] = useState(''), [foundFriend, setFoundFriend] = useState<Friend | null>(null);
+  const [friendMessage, setFriendMessage] = useState(''), [friendBusy, setFriendBusy] = useState(false);
+  const [presence, setPresence] = useState<'online' | 'invisible'>('online');
+  const [networkTab, setNetworkTab] = useState<'account' | 'friends'>('account');
+  const [friendDetails, setFriendDetails] = useState<string | null>(null), [presenceBusy, setPresenceBusy] = useState(false);
   const [status, setStatus] = useState('未登录'), [logged, setLogged] = useState(false);
   const [active, setActive] = useState(false), [connected, setConnected] = useState(false);
   const [side, setSide] = useState<Side>('red');
@@ -23,7 +31,9 @@ export function useNetworkGame(options: {
   const pendingMove = useRef<number | null>(null), ackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function clearConnection() {
     if (ackTimer.current) clearTimeout(ackTimer.current);
-    pendingMove.current = null; dc.current?.close(); pc.current?.close();
+    pendingMove.current = null;
+    if (dc.current) { dc.current.onclose = null; dc.current.onmessage = null; dc.current.onopen = null; dc.current.close(); }
+    if (pc.current) { pc.current.onconnectionstatechange = null; pc.current.onicecandidate = null; pc.current.ondatachannel = null; pc.current.close(); }
     dc.current = null; pc.current = null; pending.current = []; setConnected(false);
   }
   async function api(path: string, data: unknown) {
@@ -118,8 +128,11 @@ export function useNetworkGame(options: {
     if (!controller.signal.aborted) setStatus('在线服务已断开，请点恢复在线');
   }
   async function login(register: boolean) {
+    if (authBusy) return;
+    setAuthBusy(true);
     try {
       if (active) throw new Error('请先退出当前对局');
+      if (register && password !== confirmPassword) throw new Error('两次输入的密码不一致，请重新确认');
       // Deployment configuration belongs to the application, never to the player UI.
       const configured = document.querySelector<HTMLMetaElement>('meta[name="yisi-network-endpoint"]')?.content;
       const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
@@ -128,9 +141,10 @@ export function useNetworkGame(options: {
       if (endpoint.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) throw new Error('网络对战尚未开放安全连接，请稍后再试');
       session.current.url = endpoint.origin;
       const result = await api(register ? '/register' : '/login', { name, password });
-      session.current = { ...session.current, ...result }; setPassword(''); setLogged(true); setStatus('已登录 · 等待邀请');
+      session.current = { ...session.current, ...result }; setPresence(result.presence ?? 'online'); setPassword(''); setConfirmPassword(''); setLogged(true); setStatus('已登录 · 等待邀请');
       void subscribe().catch(error => { if (error.name !== 'AbortError') setStatus(error.message); });
     } catch (error) { setStatus((error as Error).message); }
+    finally { setAuthBusy(false); }
   }
   async function leave() {
     try { if (game.current) await api('/leave', { gameId: game.current.gameId }); }
@@ -142,6 +156,29 @@ export function useNetworkGame(options: {
     }
     clearConnection(); game.current = null; setActive(false); setStatus('已退出对局');
   }
+  async function searchFriend() {
+    if (friendBusy) return;
+    setFriendBusy(true); setFoundFriend(null);
+    try { const result = await api('/search', { name: friendQuery }); setFoundFriend(result.user); setFriendMessage(result.user ? '' : '没有找到该账号，请确认完整账号'); }
+    catch (error) { setFriendMessage((error as Error).message); }
+    finally { setFriendBusy(false); }
+  }
+  async function changePresence(mode: 'online' | 'invisible') {
+    if (presenceBusy) return;
+    setPresenceBusy(true);
+    try { const result = await api('/presence', { mode }); setPresence(result.presence); }
+    catch (error) { setStatus((error as Error).message); }
+    finally { setPresenceBusy(false); }
+  }
+  async function changeFriend(friend: string, add: boolean) {
+    if (friendBusy) return;
+    setFriendBusy(true);
+    try {
+      const result = await api(add ? '/friends/add' : '/friends/remove', { name: friend });
+      setUsers(result.friends); setFoundFriend(null); setFriendMessage(add ? '已加入好友列表' : '已从好友列表移除');
+    } catch (error) { setFriendMessage((error as Error).message); }
+    finally { setFriendBusy(false); }
+  }
   useEffect(() => () => { events.current?.abort(); dc.current?.close(); pc.current?.close(); if (ackTimer.current) clearTimeout(ackTimer.current); }, []);
   function sendMove(from: [number, number], to: [number, number]) {
     const state = latest.current;
@@ -152,11 +189,55 @@ export function useNetworkGame(options: {
       return true;
     } catch { setConnected(false); setStatus('发送失败，落子未执行'); return false; }
   }
-  const panel = <details className="collapsible-module network-panel" open><summary>网络对战 · 注册 / 邀请好友</summary><div className="collapsible-content" style={{ display: 'grid', gap: 8 }}>
+  const panel = <details className="collapsible-module network-panel" open><summary>网络对战</summary><div className="collapsible-content" style={{ display: 'grid', gap: 8 }}>
     <style>{`.network-panel label{display:grid;gap:6px;font-size:13px;color:#365a47}.network-panel input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 10px;border:1px solid #d9d3c4;border-radius:8px;background:#fff;font:inherit}.network-panel button{min-height:38px;padding:7px 12px;margin:3px 3px 3px 0;border:1px solid #c9d4c9;border-radius:8px;background:#edf3ed;color:#245f43;font:inherit;cursor:pointer}.network-panel button:disabled{opacity:.45;cursor:default}.network-panel p{font-size:14px;overflow-wrap:anywhere}.network-panel small{color:#77746b;line-height:1.6}`}</style>
-    {!logged && <><label>账号 <input aria-label="网络账号" autoComplete="username" value={name} onChange={e => setName(e.target.value)} /></label><label>密码 <input aria-label="网络密码" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></label><div><button onClick={() => void login(true)}>注册并上线</button> <button onClick={() => void login(false)}>登录</button></div></>}
+    {!logged && <>
+      <div role="group" aria-label="注册或登录">
+        <button disabled={authBusy} aria-pressed={authMode === 'login'} onClick={() => { setAuthMode('login'); setPassword(''); setConfirmPassword(''); setStatus('请输入账号和密码'); }}>登录</button>
+        <button disabled={authBusy} aria-pressed={authMode === 'register'} onClick={() => { setAuthMode('register'); setPassword(''); setConfirmPassword(''); setStatus('创建账号，开始对战'); }}>注册</button>
+      </div>
+      <form onSubmit={e => { e.preventDefault(); void login(authMode === 'register'); }} style={{ display: 'grid', gap: 8 }}>
+        <label>账号 <input aria-label="网络账号" required disabled={authBusy} autoComplete="username" value={name} onChange={e => setName(e.target.value)} /></label>
+        <label>密码 <input aria-label="网络密码" required maxLength={128} disabled={authBusy} type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} /></label>
+        {authMode === 'register' && <><label>确认密码 <input aria-label="确认密码" required maxLength={128} disabled={authBusy} type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label><small>密码无需复杂组合，再输入一次即可确认。</small></>}
+        <button type="submit" disabled={authBusy}>{authBusy ? '请稍候…' : authMode === 'register' ? '注册并上线' : '登录并上线'}</button>
+      </form>
+    </>}
     <p role="status">{status}{active ? ` · 你执${side === 'red' ? '红' : '黑'}` : ''}</p>
-    {logged && !active && <><small>邀请方执红，接受方执黑；新对局从标准初始局面开始。</small>{users.filter(u => u.name !== session.current.name).map(u => <button key={u.name} disabled={u.busy} onClick={() => void api('/invite', { to: u.name }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请 {u.name}{u.busy ? '（对局中）' : ''}</button>)}</>}
+    {logged && <>
+      <div role="group" aria-label="网络对战选项">
+        <button aria-pressed={networkTab === 'account'} onClick={() => setNetworkTab('account')}>账户信息</button>
+        <button aria-pressed={networkTab === 'friends'} onClick={() => setNetworkTab('friends')}>好友列表（{users.length}）</button>
+      </div>
+      {networkTab === 'account' && <section aria-label="账户信息">
+        <strong>账号：{session.current.name}</strong>
+        <p>账户状态：{presence === 'online' ? '在线' : '隐身'}</p>
+        <div role="group" aria-label="账户状态">
+          <button disabled={presenceBusy} aria-pressed={presence === 'online'} onClick={() => void changePresence('online')}>在线</button>
+          <button disabled={presenceBusy} aria-pressed={presence === 'invisible'} onClick={() => void changePresence('invisible')}>隐身</button>
+        </div>
+        <small>隐身时好友看到你离线；你仍可主动邀请在线好友，邀请会显示你的账号。状态选择会保存到账号。</small>
+      </section>}
+      {networkTab === 'friends' && <section aria-label="好友列表" style={{ display: 'grid', gap: 8 }}>
+      <form onSubmit={e => { e.preventDefault(); void searchFriend(); }} style={{ display: 'grid', gap: 6 }}>
+        <label>搜索好友 <input aria-label="搜索好友账号" required maxLength={32} value={friendQuery} onChange={e => { setFriendQuery(e.target.value); setFoundFriend(null); setFriendMessage(''); }} placeholder="输入好友的完整账号" /></label>
+        <button disabled={friendBusy} type="submit">搜索</button>
+      </form>
+      {friendMessage && <small role="status">{friendMessage}</small>}
+      {foundFriend && <div>{foundFriend.name} · {foundFriend.online ? foundFriend.busy ? '对局中' : '在线' : '离线'} <button disabled={friendBusy || foundFriend.added} onClick={() => void changeFriend(foundFriend.name, true)}>{foundFriend.added ? '已添加' : '添加好友'}</button></div>}
+      <strong>我的好友</strong>
+      {users.length === 0 && <small>还没有好友，搜索账号后添加即可。</small>}
+      {users.map(u => <div key={u.name} data-friend={u.name} style={{ borderBottom: '1px solid #e4e0d6', paddingBottom: 6 }}>
+        <span>{u.name} · {u.online ? u.busy ? '对局中' : '在线' : '离线'}</span><div>
+          <button disabled={active || !u.online || u.busy} onClick={() => void api('/invite', { to: u.name }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请 {u.name}</button>
+          <button aria-expanded={friendDetails === u.name} onClick={() => setFriendDetails(friendDetails === u.name ? null : u.name)}>好友信息</button>
+          <button disabled={friendBusy} onClick={() => void changeFriend(u.name, false)}>移除好友</button>
+        </div>
+        {friendDetails === u.name && <div aria-label={`${u.name} 的好友信息`}><p>好友账号：{u.name}</p><p>当前状态：{u.online ? u.busy ? '对局中' : '在线 · 可邀请对战' : '离线 · 暂不可邀请'}</p><small>隐身好友显示为离线，不公开其隐身状态。</small></div>}
+      </div>)}
+      {!active && <small>邀请方执红，接受方执黑；新对局从标准初始局面开始。</small>}
+      </section>}
+    </>}
     {invitation && !active && <div>{invitation.from} 邀请你对战 <button onClick={() => void api('/respond', { id: invitation.id, accept: true }).catch(e => setStatus(e.message))}>接受</button> <button onClick={() => void api('/respond', { id: invitation.id, accept: false }).then(() => setInvitation(null)).catch(e => setStatus(e.message))}>拒绝</button></div>}
     {active && <div><button disabled={connected} onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button> <button onClick={() => void leave()}>退出对局</button></div>}
     {logged && <div><button onClick={() => void subscribe().catch(e => setStatus(e.message))}>恢复在线</button> <button disabled={active} onClick={() => void api('/logout', {}).then(() => { events.current?.abort(); setLogged(false); setUsers([]); session.current.token = ''; setStatus('已退出登录'); }).catch(e => setStatus(e.message))}>退出登录</button></div>}

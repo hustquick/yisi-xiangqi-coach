@@ -11,8 +11,9 @@ test('注册、密码验证、来源限制与对局权限', async () => {
     return { status: r.status, body: await r.json() };
   }
   try {
-    assert.equal((await post('/register', { name: 'A', password: 'short' })).status, 400);
-    const a = await post('/register', { name: 'A', password: 'test-password-A' });
+    assert.equal((await post('/register', { name: 'A', password: '' })).status, 400);
+    assert.equal((await post('/register', { name: 'A', password: 'a'.repeat(129) })).status, 400);
+    const a = await post('/register', { name: 'A', password: '1' });
     assert.equal(a.status, 200); assert.equal(a.body.name, 'a'); assert.equal(a.body.iceServers.length, 1);
     assert.equal((await post('/register', { name: 'a', password: 'test-password-A' })).status, 409);
     assert.equal((await post('/login', { name: 'A', password: 'wrong-password' })).status, 401);
@@ -20,8 +21,19 @@ test('注册、密码验证、来源限制与对局权限', async () => {
     assert.equal((await post('/signal', { gameId: 'other', kind: 'offer', payload: {} }, a.body.token)).status, 403);
     assert.equal((await post('/invite', { to: 'B' }, a.body.token)).status, 400);
     assert.equal((await post('/ice', {}, a.body.token)).status, 200);
-    const newer = await post('/login', { name: 'A', password: 'test-password-A' });
+    const b = await post('/register', { name: 'B', password: '2' });
+    assert.equal(b.status, 200);
+    assert.equal((await post('/search', { name: 'b' }, a.body.token)).body.user.online, false);
+    assert.equal((await post('/search', { name: 'missing' }, a.body.token)).body.user, null);
+    assert.equal((await post('/search', { name: 'a' }, a.body.token)).body.user, null);
+    assert.equal((await post('/friends/add', { name: 'B' }, a.body.token)).body.friends[0].name, 'b');
+    assert.equal((await post('/friends', {}, b.body.token)).body.friends.length, 0, '每个账号独立保存好友');
+    assert.equal((await post('/presence', { mode: 'bad' }, b.body.token)).status, 400);
+    assert.equal((await post('/presence', { mode: 'invisible' }, b.body.token)).body.presence, 'invisible');
+    const newer = await post('/login', { name: 'A', password: '1' });
     assert.equal(newer.status, 200);
+    assert.equal((await post('/friends', {}, newer.body.token)).body.friends[0].name, 'b', '重新登录保留好友');
+    assert.equal((await post('/friends/remove', { name: 'b' }, newer.body.token)).body.friends.length, 0);
     assert.equal((await post('/ice', {}, a.body.token)).status, 401);
     assert.equal((await post('/logout', {}, newer.body.token)).status, 200);
     assert.equal((await post('/ice', {}, newer.body.token)).status, 401);
