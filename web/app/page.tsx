@@ -1950,7 +1950,7 @@ export default function Home() {
             <small>象棋思考教练 · HTML</small>
           </div>
         </div>
-        <div className={`status engine-${engineState}`}>
+        {!network.active && <div className={`status engine-${engineState}`}>
           <i />{" "}
           {gameMode === "setup"
             ? "摆盘模式 · 已暂停分析"
@@ -1963,7 +1963,7 @@ export default function Home() {
                   : engineState === "error"
                     ? "皮卡鱼计算超时 · 暂无可靠评分"
                     : `${engineMode === "native" ? `本地原生皮卡鱼 · ${engineThreads ?? 1}线程 · NNUE已本地加载` : "浏览器皮卡鱼"}已就绪`}
-        </div>
+        </div>}
       </header>
 
       {recordMessage && <div className="record-message" role="status"><span>{recordMessage}</span><button onClick={() => setRecordMessage("")}>×</button></div>}
@@ -2371,7 +2371,7 @@ export default function Home() {
         </div>}
       </section></Collapsible>
 
-      <Collapsible title="棋谱与存档"><section className="record-toolbar panel" aria-label="棋谱与存档">
+      {!network.watching && <Collapsible title="棋谱与存档"><section className="record-toolbar panel" aria-label="棋谱与存档">
         <div className="record-summary"><span aria-hidden="true">谱</span><div><small>当前棋局</small><strong>{recordTitle}</strong></div><em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em></div>
         <div className="record-stepper" aria-label="棋谱步进">
           <button onClick={() => goToPly(0)} disabled={activePly === 0} title="回到开始"><i>⇤</i><span>开始</span></button><button onClick={() => goToPly(activePly - 1)} disabled={activePly === 0} title="上一步"><i>‹</i><span>上一步</span></button><button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length} title="下一步"><span>下一步</span><i>›</i></button><button onClick={() => goToPly(history.length)} disabled={activePly === history.length} title="前往末尾"><span>末尾</span><i>⇥</i></button>
@@ -2383,7 +2383,7 @@ export default function Home() {
           <div className="loader-grid"><button className="file-load" onClick={() => recordFileRef.current?.click()}><b>选择本地文件</b><span>XQF 1.0 · FEN · 弈思 JSON 存档</span></button><div className="fen-load"><label htmlFor="fen-input">粘贴 FEN 局面</label><textarea id="fen-input" value={fenInput} onChange={(event) => setFenInput(event.target.value)} placeholder="例如：rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w" /><button onClick={importFenText} disabled={!fenInput.trim()}>载入此局面</button></div></div>
           <div className="saved-games"><strong>本机存档</strong>{savedGames.length ? savedGames.map((saved) => <button key={saved.id} onClick={() => loadSavedGame(saved.id)}><span>{saved.title}</span><small>{new Date(saved.savedAt).toLocaleString("zh-CN")}</small></button>) : <em>还没有保存的棋局</em>}</div>
         </section>}
-      </section></Collapsible>
+      </section></Collapsible>}
         </div>
       </section>
 

@@ -6,11 +6,13 @@ final class CloudLobbyModel: ObservableObject {
     struct Person: Identifiable {
         let name: String, id: String, nickname: String
         let online: Bool, busy: Bool, added: Bool
+        let rating: Int, provisional: Bool
         init?(_ value: [String: Any]) {
             guard let name = value["name"] as? String, let id = value["id"] as? String else { return nil }
             self.name = name; self.id = id; nickname = value["nickname"] as? String ?? name
             online = value["online"] as? Bool ?? false; busy = value["busy"] as? Bool ?? false
             added = value["added"] as? Bool ?? false
+            rating = value["rating"] as? Int ?? 1200; provisional = value["provisional"] as? Bool ?? true
         }
     }
     @Published var account: CloudAccountClient.Session?
@@ -34,6 +36,9 @@ final class CloudLobbyModel: ObservableObject {
     init(client: CloudAccountClient = CloudAccountClient()) { self.client = client; account = client.session }
     var gameID: String? { game?["gameId"] as? String ?? game?["id"] as? String }
     var engaged: Bool { gameID != nil || watching != nil }
+    func refreshRating() async {
+        do { account = try await client.restore() } catch { handleError(error) }
+    }
 
     func restore() async {
         guard account != nil else { return }
@@ -150,6 +155,7 @@ final class CloudLobbyModel: ObservableObject {
             friends = []; requests = []; results = []; invitation = nil; history = []; records = []
             message = "账号已在其他设备登录，本端已退出"
         case "peer-left", "expired": game = nil; message = "对局已结束"
+        case "round-finished": Task { await refreshRating() }
         default: break
         }
         onEvent?(value)

@@ -158,6 +158,9 @@ try {
   assert.equal(await b.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','对方能看到摸子');
   await c.locator('.piece.peer-selected').waitFor();
   assert.equal(await c.locator('.record-message').count(),0,'观战自动载入不显示棋谱提示');
+  assert.equal(await c.locator('header .status').count(),0,'观战不显示引擎计算状态');
+  assert.equal(await c.locator('.record-toolbar').count(),0,'观战隐藏存档操作');
+  assert.equal(await a.locator('header .status').count(),0,'网络对战不显示引擎计算状态');
   assert.equal(await c.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','观战者能看到摸子');
   const spectatorMoveStarted=Date.now();
   await a.getByRole('button',{name:'棋盘 0,5',exact:true}).click({force:true});
@@ -236,6 +239,8 @@ try {
   await b.getByRole('status').filter({ hasText: '对局已结束' }).waitFor();
   await b.getByRole('status').filter({hasText:'对方已退出'}).waitFor();
   await c.getByRole('status').filter({hasText:'已结束观战'}).waitFor();
+  assert.equal(await c.locator('header .status').count(),1,'退出观战恢复引擎状态');
+  assert.equal(await c.locator('.record-toolbar').count(),1,'退出观战恢复存档区');
   assert.equal(await b.getByRole('button',{name:'退出对局',exact:true}).count(),0,'对方退出后自动离开对战');
   await a.getByRole('button',{name:'对局历史',exact:true}).click();
   await a.getByRole('region',{name:'对局历史',exact:true}).getByText(/退出结束.*用时/).waitFor();

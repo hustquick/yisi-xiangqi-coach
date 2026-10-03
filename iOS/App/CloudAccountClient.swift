@@ -9,6 +9,8 @@ final class CloudAccountClient {
         var id: String
         var nickname: String
         var presence: String
+        var rating: Int? = nil
+        var games: Int? = nil
     }
     struct APIError: LocalizedError {
         let status: Int
@@ -59,7 +61,7 @@ final class CloudAccountClient {
               let id = value["id"] as? String, let nickname = value["nickname"] as? String else {
             throw APIError(status: 0, message: "账号响应不完整")
         }
-        let saved = Session(token: token, name: account, id: id, nickname: nickname, presence: value["presence"] as? String ?? "online")
+        let saved = Session(token: token, name: account, id: id, nickname: nickname, presence: value["presence"] as? String ?? "online", rating:value["rating"] as? Int,games:value["games"] as? Int)
         try persist(saved)
         session = saved
         return saved
@@ -73,6 +75,8 @@ final class CloudAccountClient {
             saved.id = value["id"] as? String ?? saved.id
             saved.nickname = value["nickname"] as? String ?? saved.nickname
             saved.presence = value["presence"] as? String ?? saved.presence
+            saved.rating = value["rating"] as? Int
+            saved.games = value["games"] as? Int
             try persist(saved); session = saved
             return saved
         } catch let error as APIError where error.status == 401 {

@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHmac } from 'node:crypto';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { createRatings, nearestOpponent } from './ratings.mjs';
 
 const token = () => randomBytes(32).toString('base64url');
 const derivePassword = promisify(scrypt);
@@ -24,12 +25,13 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   db.exec('INSERT OR IGNORE INTO profiles(name,nickname) SELECT name,name FROM users ORDER BY name');
   const profile = name => {
     const row=db.prepare('SELECT id,nickname FROM profiles WHERE name = ?').get(name);
-    return row ? {...row,id:String(row.id).padStart(9,'0')} : null;
+    return row ? {...row,id:String(row.id).padStart(9,'0'),...ratings.get(name),provisional:ratings.get(name).games<20} : null;
   };
   db.exec('CREATE TABLE IF NOT EXISTS game_history (id TEXT PRIMARY KEY, red TEXT NOT NULL, black TEXT NOT NULL, started INTEGER NOT NULL, ended INTEGER, result TEXT, duration INTEGER NOT NULL DEFAULT 0)');
   db.exec('CREATE TABLE IF NOT EXISTS game_records (game TEXT PRIMARY KEY, content TEXT NOT NULL)');
   const historyColumns=db.prepare('PRAGMA table_info(game_history)').all().map(row=>row.name);
   for(const column of ['red_moved','black_moved']) if(!historyColumns.includes(column)) db.exec(`ALTER TABLE game_history ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 1`);
+  const ratings=createRatings(db);
   function saveGameRecord(game,content) {
     if(content==null) return;
     const record=content.record;
@@ -49,6 +51,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     }
     const ended = now();
     db.prepare('UPDATE game_history SET ended=?,result=?,duration=? WHERE id=? AND ended IS NULL').run(ended,result,Math.max(0,ended-game.created),game.id);
+    ratings.sync();
   }
   function matchup(name,peer) {
     const rows=db.prepare("SELECT red,black,result FROM game_history WHERE ((red=? AND black=?) OR (red=? AND black=?)) AND ended IS NOT NULL AND result IN ('red','black','draw')").all(name,peer,peer,name);
@@ -258,13 +261,13 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         for(const [id,invite] of invites) if(invite.from===name || invite.to===name) {
           invites.delete(id);send(invite.from,{type:'invite-expired',id});send(invite.to,{type:'invite-expired',id});
         }
-        const opponent=[...matchmaking].find(([player,entry])=>player!==name && entry.minutes===minutes && streams.has(player) && !busy(player));
+        const opponent=nearestOpponent([...matchmaking],name,minutes,p=>ratings.get(p).rating,now(),p=>streams.has(p)&&!busy(p));
         if(opponent) {
-          const [player]=opponent;
+          const player=opponent;
           const red=randomBytes(1)[0]%2===0?name:player,black=red===name?player:name;
           const game=beginGame(red,black,minutes);
           json(res,200,{waiting:false,gameId:game.id});
-        } else {matchmaking.set(name,{minutes});send(name,{type:'match-state',waiting:true,minutes});json(res,200,{waiting:true,minutes});}
+        } else {matchmaking.set(name,{minutes,joined:now()});send(name,{type:'match-state',waiting:true,minutes});json(res,200,{waiting:true,minutes});}
         return;
       }
       if(path==='/watch') {
@@ -286,7 +289,10 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         const peer = data.opponentId == null ? null : db.prepare('SELECT name FROM profiles WHERE id=?').get(String(data.opponentId))?.name;
         if(data.opponentId!=null && !peer) throw fail(404,'对手不存在');
         const rows = peer ? db.prepare('SELECT * FROM game_history WHERE ((red=? AND black=?) OR (red=? AND black=?)) AND started<? ORDER BY started DESC,id DESC LIMIT 100').all(name,peer,peer,name,before) : db.prepare('SELECT * FROM game_history WHERE (red=? OR black=?) AND started<? ORDER BY started DESC,id DESC LIMIT 100').all(name,name,before);
-        json(res,200,{games:rows.map(row=>({id:row.id,side:row.red===name?'red':'black',opponent:profile(row.red===name?row.black:row.red),started:row.started,ended:row.ended,hasRecord:!!db.prepare('SELECT 1 FROM game_records WHERE game=?').get(row.id),result:row.result??'进行中',duration:row.ended===null?Math.max(0,now()-row.started):row.duration}))}); return;
+        json(res,200,{games:rows.map(row=>{
+          const rating=db.prepare('SELECT * FROM rating_games WHERE game=?').get(row.id),red=row.red===name;
+          return {id:row.id,side:red?'red':'black',opponent:profile(red?row.black:row.red),started:row.started,ended:row.ended,hasRecord:!!db.prepare('SELECT 1 FROM game_records WHERE game=?').get(row.id),result:row.result??'进行中',duration:row.ended===null?Math.max(0,now()-row.started):row.duration,ratingBefore:rating?(red?rating.red_before:rating.black_before):null,ratingChange:rating?(red?rating.delta:-rating.delta):null};
+        })}); return;
       }
       if (path === '/profile') {
         if (typeof data.nickname !== 'string' || !data.nickname.trim() || data.nickname.trim().length > 32) throw fail(400, '名称须为1–32个字符');
@@ -510,6 +516,11 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   });
   server.requestTimeout = 15_000;
   const maintenance = setInterval(() => {
+    for(const [name,entry] of matchmaking) {
+      if(!streams.has(name)||busy(name))continue;
+      const peer=nearestOpponent([...matchmaking],name,entry.minutes,p=>ratings.get(p).rating,now(),p=>streams.has(p)&&!busy(p));
+      if(peer) {const red=randomBytes(1)[0]%2===0?name:peer;beginGame(red,red===name?peer:name,entry.minutes);}
+    }
     for (const [key, s] of sessions) if (s.expires <= now()) { deleteSession(key); streams.get(s.name)?.end(); }
     for (const [key, value] of invites) if (value.expires <= now()) {
       invites.delete(key);

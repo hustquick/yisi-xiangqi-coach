@@ -1908,7 +1908,7 @@ export default function Home() {
             <small>象棋思考教练</small>
           </div>
         </div>
-        <div className={`status engine-${engineState}`}>
+        {!network.active && <div className={`status engine-${engineState}`}>
           <i />{" "}
           {gameMode === "setup"
             ? "摆盘模式 · 已暂停分析"
@@ -1921,7 +1921,7 @@ export default function Home() {
                   : engineState === "error"
                     ? "皮卡鱼计算超时 · 暂无可靠评分"
                     : "已就绪"}
-        </div>
+        </div>}
       </header>
 
       {showRecordPanel && <section className="record-loader panel">
@@ -2321,7 +2321,7 @@ export default function Home() {
         {gameMode === "setup" && <div className="setup-panel"><div className="setup-actions"><button className={setupBrush === "move" ? "active" : ""} onClick={() => setSetupBrush("move")}>移动</button><button className={setupBrush === "erase" ? "active" : ""} onClick={() => setSetupBrush("erase")}>删除</button><button onClick={() => setTurn((side) => side === "red" ? "black" : "red")}>{turn === "red" ? "红方先行" : "黑方先行"}</button><button className="finish" onClick={finishSetup}>完成摆盘</button></div>{(["red", "black"] as Side[]).map((side) => <div className={`setup-pieces ${side}`} key={side}><span>{side === "red" ? "红方" : "黑方"}</span>{setupPieces[side].map((name) => {const active=typeof setupBrush === "object" && setupBrush.side === side && setupBrush.name === name;return <button key={name} className={active ? "active" : ""} onClick={() => setSetupBrush({side,name})}>{name}</button>;})}</div>)}</div>}
       </section></Collapsible>}
 
-      <Collapsible title="棋谱与存档"><section className="record-toolbar panel">
+      {!network.watching && <Collapsible title="棋谱与存档"><section className="record-toolbar panel">
         <div className="record-summary"><span>谱</span><div><small>当前棋局</small><strong>{recordTitle}</strong></div><em>{history.length ? `${activePly} / ${history.length} 步` : "标准新局"}</em></div>
         <div className="record-stepper"><button onClick={() => goToPly(0)} disabled={!activePly}><i>⇤</i><span>开始</span></button><button onClick={() => goToPly(activePly - 1)} disabled={!activePly}><i>‹</i><span>上一步</span></button><button onClick={() => goToPly(activePly + 1)} disabled={activePly === history.length}><span>下一步</span><i>›</i></button><button onClick={() => goToPly(history.length)} disabled={activePly === history.length}><span>末尾</span><i>⇥</i></button></div>
         <div className="record-actions"><button className="load-record" onClick={() => setShowRecordPanel((value) => !value)}><i>↥</i> 载入棋谱</button><button className="save-record" onClick={saveGame}><i>⌑</i> 保存棋局</button></div>
@@ -2333,7 +2333,7 @@ export default function Home() {
           {cloudRecords.map(record => <div key={record.id}><span>{record.title}</span><button disabled={cloudBusy || network.active} onClick={() => void cloudRecord('load', record.id)}>载入</button><button disabled={cloudBusy} onClick={() => void cloudRecord('download', record.id)}>下载</button></div>)}
         </section>}
         {recordMessage && <p>{recordMessage}</p>}
-      </section></Collapsible>
+      </section></Collapsible>}
       </div>
       </section>
 

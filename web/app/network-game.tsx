@@ -18,7 +18,8 @@ export function useNetworkGame(options: {
   const [name, setName] = useState(''), [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [confirmPassword, setConfirmPassword] = useState(''), [authBusy, setAuthBusy] = useState(false);
-  type Friend = { name: string; id: string; nickname: string; online: boolean; busy: boolean; added?: boolean };
+  type Friend = { name: string; id: string; nickname: string; online: boolean; busy: boolean; added?: boolean; rating?:number; provisional?:boolean };
+  const [rating,setRating]=useState<{rating:number;games:number}|null>(null);
   const [nickname,setNickname] = useState('');
   const [history,setHistory] = useState<any[] | null>(null);
   const [matchStats,setMatchStats] = useState<{opponent:{id:string;nickname:string};total:number;wins:number;losses:number;draws:number}|null>(null);
@@ -61,6 +62,12 @@ export function useNetworkGame(options: {
     setPeerSelected(result.selected??null);
   }
   const [drawOffer,setDrawOffer] = useState(false), [roundEnding,setRoundEnding] = useState(false);
+  useEffect(()=>{
+    if(!logged){setRating(null);return;}
+    let stopped=false;
+    void api('/ice',{}).then(value=>{if(!stopped)setRating(value);}).catch(()=>{});
+    return()=>{stopped=true;};
+  },[logged,roundEnding]);
   const [undoOffer,setUndoOffer]=useState(false);
   const [timeOffer,setTimeOffer]=useState(false);
   const [peerSelected,setPeerSelected]=useState<[number,number]|null>(null);
@@ -400,6 +407,7 @@ export function useNetworkGame(options: {
     {logged && <>
       <section aria-label="账户信息">
         <strong>{session.current.nickname}（ID {session.current.id}）</strong>
+        <small>等级分 {rating?.rating??1200}{(rating?.games??0)<20?' · 暂定':''} · {rating?.games??0} 场计分对局</small>
         <details><summary>修改名称</summary><input aria-label="账户名称" value={nickname} maxLength={32} onChange={e=>setNickname(e.target.value)} /><button onClick={()=>void api('/profile',{nickname}).then(result=>{session.current.nickname=result.nickname;setNickname(result.nickname);setStatus('名称已更新');}).catch(e=>setStatus(e.message))}>保存名称</button></details>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14 }}>账户状态：
           <select aria-label="账户状态" value={presence} disabled={presenceBusy} style={{ font: 'inherit', color: '#245f43', background: '#edf3ed', border: '1px solid #c9d4c9', borderRadius: 8, padding: '7px 12px' }} onChange={e => { if (e.target.value === 'logout') void logout(); else void changePresence(e.target.value as 'online' | 'invisible'); }}>
@@ -435,7 +443,7 @@ export function useNetworkGame(options: {
         <span style={{fontWeight:600,color:'#245f43'}}>{u.nickname} · ID {u.id} · {u.online ? u.busy ? '对局中' : '在线' : '离线'}</span><div style={{display:'flex',flexWrap:'wrap',gap:6,borderTop:'1px solid #dde5d9',paddingTop:8}}>
           <button disabled={active || !!watching || !u.online || u.busy} onClick={() => void api('/invite', { to: u.name, side:inviteSide,swapSides,minutes }).then(() => setStatus('邀请已发出，等待对手接受')).catch(e => setStatus(e.message))}>邀请对战</button>
           {u.busy && <button disabled={active || !!watching} onClick={()=>{setWatching(u.name);setStatus(`正在观看 ${u.nickname} 的对局`);}}>观看对弈</button>}
-          <button aria-expanded={friendDetails === u.name} onClick={() => setFriendDetails(friendDetails === u.name ? null : u.name)}>好友信息</button>
+          <span>等级分 {u.rating??1200}{u.provisional?' · 暂定':''}</span><button aria-expanded={friendDetails === u.name} onClick={() => setFriendDetails(friendDetails === u.name ? null : u.name)}>好友信息</button>
           <button disabled={friendBusy} onClick={() => void changeFriend(u.name, false)}>移除好友</button>
         </div>
         {friendDetails === u.name && <div aria-label={`${u.name} 的好友信息`}><p>好友账号：{u.name}</p><p>当前状态：{u.online ? u.busy ? '对局中' : '在线' : '离线'}</p></div>}

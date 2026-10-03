@@ -52,6 +52,7 @@ struct CloudHubView: View {
             }
             .task(id: lobby.account?.name) {
                 if lobby.account != nil {
+                    await lobby.refreshRating()
                     if friendsPage { await lobby.refreshFriends() }
                     else { await lobby.refreshHistory(); await lobby.refreshRecords() }
                 }
@@ -159,6 +160,7 @@ struct CloudHubView: View {
             Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(person.nickname).font(.headline)
+                Text("等级分 \(person.rating)\(person.provisional ? " · 暂定" : "")").font(.caption).foregroundStyle(.secondary)
                 Text("ID \(person.id)").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -194,6 +196,7 @@ struct CloudHubView: View {
             Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(account.nickname)（\(account.id)）").font(.title3.bold())
+                    Text("等级分 \(account.rating ?? 1200)\((account.games ?? 0) < 20 ? " · 暂定" : "")").font(.caption).foregroundStyle(.secondary)
                     Text(lobby.online ? "已连接" : "正在连接").font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 6)
                 Picker("账户状态", selection: Binding(get: { account.presence }, set: { value in Task { await lobby.changePresence(value) } })) {
@@ -236,6 +239,9 @@ struct CloudHubView: View {
         return VStack(alignment: .leading, spacing: 5) {
             Text("对阵 \(opponent["nickname"] as? String ?? "棋友")").font(.headline)
             Text("\(historyResult(game)) · 用时 \(historyDuration(game))").font(.caption).foregroundStyle(.secondary)
+            if let before = game["ratingBefore"] as? Int, let change = game["ratingChange"] as? Int {
+                Text("等级分 \(before) → \(before + change)（\(change >= 0 ? "+" : "")\(change)）").font(.caption).foregroundStyle(.secondary)
+            }
             if game["hasRecord"] as? Bool == true {
                 Button("复盘分析") {
                     Task { if let value = try? await lobby.call("history/get", ["id": game["id"] as? String ?? ""]), let content = value["content"] as? [String: Any] { review(content) } }

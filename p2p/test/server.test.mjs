@@ -157,6 +157,10 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     const history=await post('/history',{},a.token);
     assert.equal(history.games[0].duration,12345);
     assert.equal(history.games[0].result,'red');
+    assert.equal(history.games[0].ratingBefore,1200);
+    assert.equal(history.games[0].ratingChange,16);
+    assert.equal((await post('/ice',{},a.token)).rating,1216);
+    assert.equal((await post('/ice',{},b.token)).rating,1184);
     assert.equal(history.games[0].opponent.id,b.id);
     assert.deepEqual((await post('/history/get',{id:game.gameId},b.token)).content,content);
     await post('/rematch',{gameId:game.gameId},a.token);
