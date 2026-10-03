@@ -60,17 +60,20 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     clock+=2000;
     const firstClock=await request('/clock',{gameId:game.gameId},a.token);
     assert.equal(firstClock.limit,900000);assert.equal(firstClock.used.red,2000);assert.equal(firstClock.used.black,0);
+    assert.equal(firstClock.stepLimit,30000);assert.equal(firstClock.stepRemaining,28000);assert.equal(firstClock.ply,0);
     assert.equal((await request('/clock/move',{gameId:game.gameId,ply:1},b.token)).status,409);
     await request('/clock/move',{gameId:game.gameId,ply:1},a.token);
     clock+=3000;
     const secondClock=await request('/clock',{gameId:game.gameId},b.token);
     assert.equal(secondClock.used.red,2000);assert.equal(secondClock.used.black,3000);
+    assert.equal(secondClock.stepRemaining,27000);
     await request('/time/offer',{gameId:game.gameId},a.token);
     assert.equal((await request('/time/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
     await request('/time/respond',{gameId:game.gameId,accept:false},b.token);
     assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,900000);
     await request('/time/offer',{gameId:game.gameId},a.token);await request('/time/respond',{gameId:game.gameId,accept:true},b.token);
     assert.equal((await request('/clock',{gameId:game.gameId},a.token)).limit,1200000);
+    assert.equal((await request('/clock',{gameId:game.gameId},a.token)).stepRemaining,27000,'局时加时不能重置步时');
     const undoContent={version:1,record:{title:'悔棋测试',pieces:[],turn:'red',moves:[{from:[0,6],to:[0,5]}]}};
     await request('/undo/offer',{gameId:game.gameId,content:undoContent},a.token);
     assert.equal((await request('/undo/respond',{gameId:game.gameId,accept:true},a.token)).status,400);
@@ -101,8 +104,16 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,900000,'下一局不继承临时加时');
     await request('/clock/move',{gameId:next.id,ply:1},b.token);
     await request('/clock/move',{gameId:next.id,ply:2},a.token);
-    clock+=100;await request('/resign',{gameId:next.id,content},a.token);
-    assert.equal((await request('/history',{},a.token)).games[0].result,'red');
+    for(let ply=3;ply<=6;ply++) {
+      const state=await request('/clock/move',{gameId:next.id,ply},ply%2?b.token:a.token);
+      assert.equal(state.stepLimit,ply<6?30000:90000,'前三回合30秒，第4回合90秒');
+      assert.equal(state.stepRemaining,state.stepLimit);
+    }
+    clock+=89999;
+    assert.equal((await request('/clock',{gameId:next.id},a.token)).ended,false);
+    clock+=1;
+    assert.equal((await request('/clock',{gameId:next.id},a.token)).ended,true,'90秒步时耗尽由服务器结束');
+    assert.equal((await request('/history',{},a.token)).games[0].result,'black');
     assert.equal((await request('/leave',{gameId:next.id,content:{invalid:true}},a.token)).status,200);
     assert.equal((await request('/search',{name:b.id},w.token)).user.busy,false);
     assert.equal((await request('/watch',{name:a.name},w.token)).status,404);

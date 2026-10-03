@@ -5,6 +5,34 @@ import WebKit
 @testable import YisiXiangqiCoach
 
 @MainActor final class MobileIntegrationTests: XCTestCase {
+    func testDisconnectedPeerExpiresAfterFiveMinutes() async throws {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let a = CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.timeout.a"))
+        let b = CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.timeout.b"))
+        let board = CoachViewModel(), game = CloudGameModel()
+        game.attach(board:board,lobby:a)
+        await a.authenticate(name:"Timeout\(stamp)A",password:"1",confirmation:"1",registering:true)
+        await b.authenticate(name:"Timeout\(stamp)B",password:"1",confirmation:"1",registering:true)
+        do {
+            try await waitUntil({a.online && b.online})
+            let invite = try await a.call("invite",["to":b.account!.name,"side":"red","minutes":45,"swapSides":true])
+            _ = try await b.call("respond",["id":invite["id"]!,"accept":true])
+            try await waitUntil({board.networkActive})
+            b.stop()
+            try await waitUntil({game.peerOffline})
+            XCTAssertTrue(game.status.contains("五分钟"))
+            let offlineAt = Date()
+            NSLog("MOBILE TEST: real five-minute disconnect grace started")
+            try await waitUntil({!board.networkActive && !a.engaged},timeout:330)
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(offlineAt),285)
+            XCTAssertLessThan(Date().timeIntervalSince(offlineAt),320)
+            await a.refreshHistory(); XCTAssertTrue(a.history.isEmpty,"Unplayed rounds must not enter history")
+            await a.logout(); await b.logout()
+            NSLog("MOBILE TEST: real five-minute disconnect expiry and no unplayed history verified")
+        } catch {
+            await game.operation("leave"); await a.logout(); await b.logout(); throw error
+        }
+    }
     func testCloudRecordReviewRunsNativeEngine() async throws {
         let board = CoachViewModel()
         let saved = CloudRecordCodec.encode(startFEN:board.fen,moves:["a3a4","a6a5"],title:"云端复盘验证")

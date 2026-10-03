@@ -98,6 +98,7 @@
 .depth-setting>div:first-child{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .depth-setting strong{font-size:13px}.depth-setting small{font-size:10px;color:var(--muted)}
 .depth-setting .depth-options{width:100%;display:flex}.depth-setting .depth-options button{flex:1}
+.step-seconds{font:700 30px system-ui;color:#176b45}.step-urgent{color:#d52c24;animation:step-warning .8s ease-in-out infinite}@keyframes step-warning{50%{opacity:.4}}@media(prefers-reduced-motion:reduce){.step-urgent{animation:none}}
 .piece.peer-selected{outline:4px solid #1688ff;outline-offset:3px;box-shadow:0 0 0 7px rgba(255,255,255,.9),0 0 15px rgba(22,136,255,.65),0 2px 5px rgba(0,0,0,.2)!important;z-index:8}
 @media(max-width:980px){.workspace{grid-template-columns:1fr;max-width:760px}.coach-sidebar{width:100%}}
 html{min-height:100%;background:var(--paper)}body{min-height:100dvh}@media(display-mode:standalone){body{padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);overscroll-behavior-y:none}main{min-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))}}

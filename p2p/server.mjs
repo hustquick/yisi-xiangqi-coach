@@ -113,17 +113,19 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   function clockState(game) {
     const used={...game.used};
     if(!game.result) used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
-    return {limit:game.limitMs,used,turn:game.clockTurn,ended:!!game.result};
+    const stepLimit=game.clockPly<6?30000:90000;
+    const stepRemaining=Math.max(0,stepLimit-Math.max(0,(game.endedAt??now())-game.stepAt));
+    return {limit:game.limitMs,used,turn:game.clockTurn,ended:!!game.result,stepLimit,stepRemaining,ply:game.clockPly};
   }
   function armClock(game) {
     clearTimeout(game.clockTimer);
     game.clockTimer=setTimeout(()=>{
       if(games.get(game.id)===game && !game.result) finishGame(game,game.clockTurn==='red'?'black':'red');
-    },Math.max(1,game.limitMs-game.used[game.clockTurn]));
+    },Math.max(1,Math.min(game.limitMs-game.used[game.clockTurn]-Math.max(0,now()-game.clockAt),(game.clockPly<6?30000:90000)-Math.max(0,now()-game.stepAt))));
     game.clockTimer.unref?.();
   }
   function initClock(game) {
-    game.limitMs??=900000;game.used={red:0,black:0};game.moved={red:false,black:false};game.clockTurn='red';game.clockAt=now();game.clockPly=0;armClock(game);
+    game.limitMs??=900000;game.used={red:0,black:0};game.moved={red:false,black:false};game.clockTurn='red';game.clockAt=now();game.stepAt=game.clockAt;game.clockPly=0;armClock(game);
   }
   function closeGame(game,name,reason='left') {
     clearTimeout(game.nextTimer);clearTimeout(game.clockTimer); games.delete(game.id);
@@ -136,6 +138,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     if(game.result) return;
     game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);clearTimeout(game.clockTimer);
     game.result=result;endHistory(game,result);
+    game.endedAt=now();
     for(const player of game.members) send(player,{type:'round-finished',gameId:game.id,result,stats:matchup(player,game.members.find(n=>n!==player))});
     game.nextTimer=setTimeout(()=>{
       if(games.get(game.id)!==game) return;
@@ -390,7 +393,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       const game = games.get(data.gameId);
       if (!game || !game.members.includes(name)) throw fail(403, '无权操作该对局');
       const peer = game.members.find(n => n !== name);
-      if(!game.result && clockState(game).used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
+      if(!game.result && (clockState(game).used[game.clockTurn]>=game.limitMs || clockState(game).stepRemaining<=0)) finishGame(game,game.clockTurn==='red'?'black':'red');
       if(path==='/time/offer') {
         if(game.limitMs>=2700000) throw fail(409,'局时已达45分钟上限');
         if(game.result || game.timeOffer) throw fail(409,'已有加时申请或本局已结束');
@@ -420,7 +423,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if(data.accept && offer.ply!==game.clockPly) throw fail(409,'局面已变化，请重新申请');
         if(data.accept) {
           game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
-          game.clockPly--;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);
+          game.clockPly--;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();game.stepAt=game.clockAt;armClock(game);
           game.snapshot.record.moves.pop();saveGameRecord(game,game.snapshot);
           for(const player of game.members) send(player,{type:'undo-applied',gameId:game.id,content:game.snapshot});
           game.selected=null;publishWatch(game);
@@ -428,11 +431,12 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         json(res,200,{ok:true});return;
       }
       if(path==='/clock' || path==='/clock/move') {
+        if(path==='/clock/move' && game.result) throw fail(409,'本局已结束，落子不再计入');
         if(path==='/clock/move' && !game.result) {
           if(data.ply===game.clockPly+1 && name===game[game.clockTurn]) {
             game.used[game.clockTurn]+=Math.max(0,now()-game.clockAt);
             if(game.used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
-            else {game.moved[game.clockTurn]=true;db.prepare(`UPDATE game_history SET ${game.clockTurn}_moved=1 WHERE id=?`).run(game.id);game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);}
+            else {game.moved[game.clockTurn]=true;db.prepare(`UPDATE game_history SET ${game.clockTurn}_moved=1 WHERE id=?`).run(game.id);game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();game.stepAt=game.clockAt;armClock(game);}
           } else if(data.ply>game.clockPly) throw fail(409,'计时步数不一致');
         }
         if(path==='/clock/move' && data.content?.record?.moves?.length===game.clockPly) {

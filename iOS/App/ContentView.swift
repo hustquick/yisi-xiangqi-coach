@@ -315,7 +315,6 @@ struct ContentView: View {
 
     private var boardSection: some View {
         VStack(spacing: 8) {
-            if viewModel.networkActive && !viewModel.networkWatching { playerClock(viewModel.networkSide.opposite) }
             HStack {
                     Button { viewModel.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                         .disabled(viewModel.activePly == 0 || viewModel.networkActive).accessibilityLabel("悔棋")
@@ -337,7 +336,12 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             XiangqiBoardView(viewModel: viewModel)
-            if viewModel.networkActive && !viewModel.networkWatching { playerClock(viewModel.networkSide) }
+            if viewModel.networkActive && !viewModel.networkWatching {
+                HStack(alignment:.top,spacing:8) {
+                    playerClock(viewModel.networkSide)
+                    playerClock(viewModel.networkSide.opposite)
+                }
+            }
             if viewModel.networkActive { DuelOperationsView(duel:duel,lobby:lobby,board:viewModel) }
             if viewModel.gameMode == .setup { setupControls }
             if !viewModel.networkActive { HStack(spacing: 7) {
@@ -351,19 +355,33 @@ struct ContentView: View {
     private func playerClock(_ side: XiangqiSide) -> some View {
         let accountName = lobby.game?[side.rawValue] as? String ?? "棋友"
         let nickname = accountName == lobby.account?.name ? lobby.account?.nickname ?? accountName : lobby.friends.first(where:{$0.name == accountName})?.nickname ?? accountName
-        return HStack(spacing:10) {
-            Text(String(nickname.prefix(1))).font(.headline).frame(width:34,height:34)
-                .background(side == .red ? red.opacity(0.15) : green.opacity(0.15),in:Circle())
-            VStack(alignment:.leading,spacing:2) { Text(nickname).font(.subheadline.bold()).lineLimit(1); Text(side.title).font(.caption2).foregroundStyle(.secondary) }
-            Spacer(minLength:4)
-            VStack(alignment:.trailing,spacing:2) {
-                Text(duel.remainingTime(side:side)).font(.system(size:28,weight:.semibold,design:.rounded)).monospacedDigit()
-                    .foregroundStyle(viewModel.sideToMove == side && duel.roundResult == nil ? green : .secondary)
-                    .padding(.horizontal,8).padding(.vertical,2)
-                    .background(viewModel.sideToMove == side && duel.roundResult == nil ? green.opacity(0.12) : .clear,in:RoundedRectangle(cornerRadius:8))
+        let active = viewModel.sideToMove == side && duel.roundResult == nil
+        let limit = viewModel.activePly < 6 ? 30.0 : 90.0
+        let stepReady = duel.clock["ply"] as? Int == viewModel.activePly && duel.clock["stepRemaining"] is Double
+        let seconds = stepReady ? ceil((duel.clock["stepRemaining"] as? Double ?? 0)/1000) : limit
+        return HStack(spacing:6) {
+            VStack(spacing:3) {
+                ZStack {
+                    Circle().fill(side == .red ? red.opacity(0.10) : green.opacity(0.10))
+                    Text(String(nickname.prefix(1))).font(.title2.bold()).foregroundStyle(.secondary.opacity(active ? 0.20 : 1))
+                    if active {
+                        Circle().stroke(green.opacity(0.12),lineWidth:4)
+                        Circle().trim(from:0,to:max(0,min(1,seconds/limit))).stroke(seconds <= 5 ? red : green,style:StrokeStyle(lineWidth:4,lineCap:.round)).rotationEffect(.degrees(-90))
+                        TimelineView(.periodic(from:.now,by:0.4)) { timeline in
+                            Text(stepReady ? String(Int(seconds)) : "—").font(.system(size:30,weight:.bold,design:.rounded)).monospacedDigit().foregroundStyle(seconds <= 5 ? red : green)
+                                .opacity(seconds <= 5 && Int(timeline.date.timeIntervalSince1970*2.5)%2 == 0 ? 0.45 : 1)
+                        }
+                    }
+                }.frame(width:48,height:48)
+                Text(duel.remainingTime(side:side)).font(.system(.subheadline,design:.rounded).weight(.semibold)).monospacedDigit()
+            }.accessibilityElement(children:.ignore).accessibilityLabel(active ? "当前步剩余\(Int(seconds))秒，\(duel.timeText(side:side))" : duel.timeText(side:side))
+            VStack(alignment:.leading,spacing:3) {
+                Text(nickname).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.8)
+                Text(side.title).font(.caption2).foregroundStyle(.secondary)
                 Text("已用 \(duel.usedTime(side:side))").font(.caption2).monospacedDigit().foregroundStyle(.secondary)
-            }.accessibilityElement(children:.ignore).accessibilityLabel(duel.timeText(side:side))
-        }.padding(10).background(surface,in:RoundedRectangle(cornerRadius:14))
+            }
+            Spacer(minLength:4)
+        }.frame(maxWidth:.infinity,alignment:.leading).padding(8).background(surface,in:RoundedRectangle(cornerRadius:14))
     }
 
     private var gameModeControls: some View {

@@ -34,7 +34,7 @@ export function useNetworkGame(options: {
   const [minutes,setMinutes]=useState(15);
   const [matching,setMatching]=useState(false);
   const [active, setActive] = useState(false), [connected, setConnected] = useState(false);
-  const [clock,setClock]=useState<{limit:number;used:Record<Side,number>;turn:Side;ended:boolean}|null>(null);
+  const [clock,setClock]=useState<{limit:number;used:Record<Side,number>;turn:Side;ended:boolean;stepLimit?:number;stepRemaining?:number;ply?:number}|null>(null);
   useEffect(()=>{
     if(!active) {setClock(null);return;}
     const update=()=>{if(game.current) void api('/clock',{gameId:game.current.gameId}).then(setClock).catch(()=>{});};
@@ -466,7 +466,7 @@ export function useNetworkGame(options: {
     {drawOffer && !roundEnding && responseCard('draw','对方提和','同意和棋','拒绝和棋')}
     {active && !connected && <button onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button>}
   </section>;
-  const clockPanel=(color:Side)=>active && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{minHeight:44,fontSize:14,padding:'8px 12px',borderRadius:10,background:clock?.turn===color?'#e3efe5':'#f4f1e9',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontVariantNumeric:'tabular-nums'}}><strong>{color==='red'?'红方':'黑方'}{clock?.turn===color&&!clock.ended?' · 行棋中':''}</strong><span>{clock ? <>已用 {formatTime(clock.used[color])} · 剩余 {formatTime(clock.limit-clock.used[color])}</> : '计时同步中'}</span></div>;
+  const clockPanel=(color:Side)=>active && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{minHeight:54,fontSize:14,padding:'8px 12px',borderRadius:10,background:clock?.turn===color?'#e3efe5':'#f4f1e9',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontVariantNumeric:'tabular-nums'}}><strong>{color==='red'?'红方':'黑方'}</strong>{clock?.turn===color&&!clock.ended&&clock.stepRemaining!==undefined&&<b className={`step-seconds ${(clock.stepRemaining??0)<=5000?'step-urgent':''}`} aria-label="当前步剩余秒数">{Math.ceil(clock.stepRemaining/1000)}</b>}<span>{clock ? <>已用 {formatTime(clock.used[color])} · 剩余 {formatTime(clock.limit-clock.used[color])}</> : '计时同步中'}</span></div>;
   function formatTime(ms:number){const s=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
   return { operations, peerSelected, clockPanel, active:active || !!watching, watching:!!watching, side, connected, sendMove, panel, logged, finishRound: (result: Side | 'draw')=>game.current ? api('/next-game',{gameId:game.current.gameId,result,content:latest.current.record?.()}).then(()=>setStatus('本局结束，双方确认后5秒按邀请设置开始下一局')) : Promise.resolve(), account: logged ? session.current.name : '', accountApi: api };
 }
