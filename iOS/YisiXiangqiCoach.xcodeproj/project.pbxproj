@@ -6,14 +6,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A103C9FAA5B9D230624AE976 /* BattleSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A375D163A36948933207CE /* BattleSelectionView.swift */; };
 		310C6A622C36DC7121FE6E99 /* CloudAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */; };
+		CB0161CF63F1BF31BFC8E304 /* CloudGameModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F1CA07BE1B57A21F043E22 /* CloudGameModel.swift */; };
 		51F31323BCECC05844FAE53A /* CloudHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */; };
 		F117EDA2DD46D0C0ACD36563 /* CloudLobbyModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */; };
+		837C0F3EA390C80DB2332DC3 /* CloudRecordCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F1A6CDB865FD303E5840A18 /* CloudRecordCodec.swift */; };
 		DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3C674C49F9230A78013C04 /* CoachViewModel.swift */; };
 		FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA066BDAE191C6841E031821 /* ContentView.swift */; };
+		0ECAEF66F628B5002532582D /* DuelOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7633BAB1EB76B78A7CFCC67 /* DuelOperationsView.swift */; };
 		5B22B5E151766F7282AA0890 /* GameRecordIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */; };
 		42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B177F71919F3F1954FEC147 /* Models.swift */; };
 		FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */; };
+		88A33EF1699F8FF908A53920 /* RTCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88B486CE47BE13E7D50323A3 /* RTCTransport.swift */; };
 		95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14AFC80628C6ED48441B5DEE /* SituationChartView.swift */; };
 		384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */; };
 		09911C43AA08395A94EE0D2A /* YisiXiangqiCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC68CB647237D96AA108941 /* YisiXiangqiCoachApp.swift */; };
@@ -60,14 +65,19 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D7A375D163A36948933207CE /* BattleSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/BattleSelectionView.swift; sourceTree = "<group>"; };
 		3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudAccountClient.swift; sourceTree = "<group>"; };
+		E9F1CA07BE1B57A21F043E22 /* CloudGameModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudGameModel.swift; sourceTree = "<group>"; };
 		605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudHubView.swift; sourceTree = "<group>"; };
 		48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudLobbyModel.swift; sourceTree = "<group>"; };
+		4F1A6CDB865FD303E5840A18 /* CloudRecordCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudRecordCodec.swift; sourceTree = "<group>"; };
 		7E3C674C49F9230A78013C04 /* CoachViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CoachViewModel.swift; sourceTree = "<group>"; };
 		BA066BDAE191C6841E031821 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/ContentView.swift; sourceTree = "<group>"; };
+		A7633BAB1EB76B78A7CFCC67 /* DuelOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/DuelOperationsView.swift; sourceTree = "<group>"; };
 		7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/GameRecordIO.swift; sourceTree = "<group>"; };
 		4B177F71919F3F1954FEC147 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/Models.swift; sourceTree = "<group>"; };
 		5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PikafishService.swift; sourceTree = "<group>"; };
+		88B486CE47BE13E7D50323A3 /* RTCTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/RTCTransport.swift; sourceTree = "<group>"; };
 		14AFC80628C6ED48441B5DEE /* SituationChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SituationChartView.swift; sourceTree = "<group>"; };
 		D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/XiangqiBoardView.swift; sourceTree = "<group>"; };
 		5BC68CB647237D96AA108941 /* YisiXiangqiCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/YisiXiangqiCoachApp.swift; sourceTree = "<group>"; };
@@ -135,14 +145,19 @@
 		3C3B0F03DC089F93B8457928 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				D7A375D163A36948933207CE /* BattleSelectionView.swift */,
 				3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */,
+				E9F1CA07BE1B57A21F043E22 /* CloudGameModel.swift */,
 				605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */,
 				48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */,
+				4F1A6CDB865FD303E5840A18 /* CloudRecordCodec.swift */,
 				7E3C674C49F9230A78013C04 /* CoachViewModel.swift */,
 				BA066BDAE191C6841E031821 /* ContentView.swift */,
+				A7633BAB1EB76B78A7CFCC67 /* DuelOperationsView.swift */,
 				7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */,
 				4B177F71919F3F1954FEC147 /* Models.swift */,
 				5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */,
+				88B486CE47BE13E7D50323A3 /* RTCTransport.swift */,
 				14AFC80628C6ED48441B5DEE /* SituationChartView.swift */,
 				D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */,
 				5BC68CB647237D96AA108941 /* YisiXiangqiCoachApp.swift */,
@@ -257,14 +272,19 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		F612CD2E22E187AC48B5913C /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			A103C9FAA5B9D230624AE976 /* BattleSelectionView.swift in Sources */,
 			310C6A622C36DC7121FE6E99 /* CloudAccountClient.swift in Sources */,
+			CB0161CF63F1BF31BFC8E304 /* CloudGameModel.swift in Sources */,
 			51F31323BCECC05844FAE53A /* CloudHubView.swift in Sources */,
 			F117EDA2DD46D0C0ACD36563 /* CloudLobbyModel.swift in Sources */,
+			837C0F3EA390C80DB2332DC3 /* CloudRecordCodec.swift in Sources */,
 			DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */,
 			FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */,
+			0ECAEF66F628B5002532582D /* DuelOperationsView.swift in Sources */,
 			5B22B5E151766F7282AA0890 /* GameRecordIO.swift in Sources */,
 			42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */,
 			FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */,
+			88A33EF1699F8FF908A53920 /* RTCTransport.swift in Sources */,
 			95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */,
 			384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */,
 			09911C43AA08395A94EE0D2A /* YisiXiangqiCoachApp.swift in Sources */,

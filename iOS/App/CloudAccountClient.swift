@@ -17,11 +17,12 @@ final class CloudAccountClient {
     }
     private let endpoint = URL(string: "https://141.148.168.171")!
     private let transport: URLSession
-    private let service = "com.yisi.xiangqicoach.cloud-session"
+    private let service: String
     private(set) var session: Session?
 
-    init(transport: URLSession = .shared) {
+    init(transport: URLSession = .shared, service: String = "com.yisi.xiangqicoach.cloud-session") {
         self.transport = transport
+        self.service = service
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: "current",
             kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
@@ -35,12 +36,14 @@ final class CloudAccountClient {
         request.httpMethod = "POST"
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let requestedToken = authenticated ? session?.token : nil
         if authenticated {
             guard let session else { throw APIError(status: 401, message: "请登录") }
             request.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (data, response) = try await transport.data(for: request)
+        if authenticated && requestedToken != session?.token { throw APIError(status:409,message:"登录状态已变更") }
         guard let response = response as? HTTPURLResponse else { throw APIError(status: 0, message: "服务器响应异常") }
         let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(response.statusCode) else {

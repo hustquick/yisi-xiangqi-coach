@@ -25,12 +25,13 @@ final class CloudLobbyModel: ObservableObject {
     @Published var game: [String: Any]?
     @Published var watching: String?
     @Published var online = false
+    @Published var matching = false
     var onEvent: (([String: Any]) -> Void)?
-    let client = CloudAccountClient()
+    let client: CloudAccountClient
     private var eventsTask: Task<Void, Never>?
     private var generation = 0
 
-    init() { account = client.session }
+    init(client: CloudAccountClient = CloudAccountClient()) { self.client = client; account = client.session }
     var gameID: String? { game?["gameId"] as? String ?? game?["id"] as? String }
     var engaged: Bool { gameID != nil || watching != nil }
 
@@ -45,6 +46,9 @@ final class CloudLobbyModel: ObservableObject {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else { message = "请输入账号和密码"; return }
         guard !registering || password == confirmation else { message = "两次输入的密码不一致"; return }
         working = true; defer { working = false }
+        // Retire the old event stream before replacing its credential. The
+        // server signs the old session out when a new login succeeds.
+        stop()
         do {
             account = try await client.signIn(name: name.trimmingCharacters(in: .whitespacesAndNewlines), password: password, registering: registering)
             message = ""; subscribe()
@@ -89,7 +93,7 @@ final class CloudLobbyModel: ObservableObject {
             message = "已退出登录"
         } catch { handleError(error) }
     }
-    func stop() { generation += 1; eventsTask?.cancel(); eventsTask = nil; online = false }
+    func stop() { generation += 1; eventsTask?.cancel(); eventsTask = nil; online = false; matching = false }
     func subscribe() {
         stop(); let revision = generation
         eventsTask = Task { [weak self] in
@@ -101,14 +105,13 @@ final class CloudLobbyModel: ObservableObject {
                         throw CloudAccountClient.APIError(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "登录已失效，请重新登录")
                     }
                     online = true
-                    var dataLines: [String] = []
                     for try await line in bytes.lines {
                         if Task.isCancelled || generation != revision { return }
-                        if line.isEmpty {
-                            if let data = dataLines.joined(separator: "\n").data(using: .utf8),
-                               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] { receive(value) }
-                            dataLines = []
-                        } else if line.hasPrefix("data:") { dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)) }
+                        // The shared server emits one complete JSON value per
+                        // data line. AsyncLineSequence can omit blank lines,
+                        // so never wait for an empty event separator here.
+                        if line.hasPrefix("data:"), let data = String(line.dropFirst(5)).trimmingCharacters(in:.whitespaces).data(using:.utf8),
+                           let value = try JSONSerialization.jsonObject(with:data) as? [String: Any] { receive(value) }
                     }
                 } catch { if Task.isCancelled || generation != revision { return }; handleError(error) }
                 online = false
@@ -120,11 +123,12 @@ final class CloudLobbyModel: ObservableObject {
     private func people(_ value: Any?) -> [Person] { (value as? [[String: Any]] ?? []).compactMap(Person.init) }
     private func receive(_ value: [String: Any]) {
         switch value["type"] as? String {
+        case "match-state": matching = value["waiting"] as? Bool ?? false
         case "presence": friends = people(value["users"]); requests = people(value["requests"])
         case "invite": invitation = value
         case "invite-expired": invitation = nil; message = "邀请已失效"
         case "declined": message = "对方拒绝对战"
-        case "game": game = value; invitation = nil; watching = nil
+        case "game": game = value; invitation = nil; watching = nil; matching = false
         case "ready":
             let current = (value["games"] as? [[String: Any]])?.first
             game = current
@@ -138,6 +142,7 @@ final class CloudLobbyModel: ObservableObject {
         onEvent?(value)
     }
     private func handleError(_ error: Error) {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
         message = error.localizedDescription
         if let error = error as? CloudAccountClient.APIError, error.status == 401 {
             client.forgetSession(); stop(); account = nil; game = nil; watching = nil

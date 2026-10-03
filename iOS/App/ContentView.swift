@@ -5,7 +5,10 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = CoachViewModel()
     @StateObject private var lobby = CloudLobbyModel()
+    @StateObject private var duel = CloudGameModel()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
+    @State private var selectingBattle = true
     @State private var boardFocusRequest = 0
     @State private var showsRecordSheet = false
     @State private var importsFile = false
@@ -38,12 +41,30 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            boardPage.tabItem { Label("棋盘", systemImage: "square.grid.3x3") }.tag(0)
-            CloudHubView(lobby: lobby, friendsPage: true)
+            Group {
+                if selectingBattle && !lobby.engaged {
+                    BattleSelectionView(network:{tab = 1},choose:{ mode in viewModel.setGameMode(mode); selectingBattle = false; boardFocusRequest += 1 })
+                } else { boardPage }
+            }.tabItem { Label("对弈", systemImage: "square.grid.3x3") }.tag(0)
+            CloudHubView(lobby: lobby, friendsPage: true,review:reviewCloud,watch:{ name in Task { await duel.watch(name) } })
                 .tabItem { Label("棋友", systemImage: "person.2") }.tag(1)
-            CloudHubView(lobby: lobby, friendsPage: false)
+            CloudHubView(lobby: lobby, friendsPage: false,review:reviewCloud)
                 .tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(2)
-        }.tint(green).task { await lobby.restore() }
+        }.tint(green)
+            .background(RTCTransportView(transport:duel.transport).frame(width:1,height:1).opacity(0.01).accessibilityHidden(true))
+            .task { duel.attach(board:viewModel,lobby:lobby); await lobby.restore() }
+            .onChange(of:duel.boardFocus) { _,_ in selectingBattle = false; tab = 0; boardFocusRequest += 1 }
+            .onChange(of:lobby.invitation?["id"] as? String) { _,value in if value != nil { tab = 1 } }
+            .onChange(of:viewModel.activePly) { _,_ in duel.publishBoard() }
+            .onChange(of:viewModel.selectedSquare) { _,_ in duel.publishSelection() }
+            .onChange(of:lobby.account?.name) { _,name in if name == nil && viewModel.networkActive { duel.leaveLocally() } }
+            .onChange(of:scenePhase) { _,phase in if phase == .active { Task { await lobby.restore() } } }
+    }
+
+    private func reviewCloud(_ content: [String: Any]) {
+        guard !lobby.engaged else { return }
+        do { try viewModel.loadCloudRecord(content,review:true); selectingBattle = false; tab = 0; analysisExpanded = true; boardFocusRequest += 1 }
+        catch { lobby.message = error.localizedDescription }
     }
 
     private var boardPage: some View {
@@ -64,6 +85,9 @@ struct ContentView: View {
                     withAnimation(.easeInOut(duration: 0.38)) {
                         proxy.scrollTo("coach-board", anchor: .top)
                     }
+                }
+                .onChange(of:duel.request) { _,request in
+                    if request != nil { tab = 0; withAnimation { proxy.scrollTo("duel-requests",anchor:.center) } }
                 }
             }
             .background(paper.ignoresSafeArea())
@@ -91,10 +115,12 @@ struct ContentView: View {
             VStack(spacing: 18) {
                 header
                 boardSection
-                collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
-                collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
-                collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
-                collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
+                if !viewModel.networkActive {
+                    collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
+                    collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
+                    collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
+                    collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
+                }
                 footer
             }
             .padding(.horizontal, 14)
@@ -211,13 +237,14 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
+            if !lobby.engaged { Button { selectingBattle = true } label: { Image(systemName:"chevron.left") }.accessibilityLabel("返回对弈选择") }
             brandLogo
             VStack(alignment: .leading, spacing: 1) {
                 Text("弈思").font(.title3.bold())
                 Text("象棋思考教练 · iOS").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            HStack(spacing: 6) {
+            if !viewModel.networkActive { HStack(spacing: 6) {
                 Circle()
                     .fill(viewModel.errorMessage == nil
                           ? ((viewModel.isApplyingMove || viewModel.isAnalyzing) ? .orange : .green)
@@ -227,7 +254,7 @@ struct ContentView: View {
                      ? (viewModel.gameMode == .setup ? "摆盘模式 · 已暂停分析" : (viewModel.gameMode == .computer && !viewModel.canHumanMove ? "电脑正在思考应着" : (viewModel.isApplyingMove ? "正在落子" : (viewModel.isAnalyzing ? "本地皮卡鱼计算中" : "本地皮卡鱼已就绪 · \(viewModel.currentScore)"))))
                      : "引擎暂不可用")
                     .font(.caption.weight(.semibold))
-            }
+            } }
         }
         .foregroundStyle(ink)
     }
@@ -288,13 +315,14 @@ struct ContentView: View {
 
     private var boardSection: some View {
         VStack(spacing: 8) {
+            if viewModel.networkActive && !viewModel.networkWatching { playerClock(viewModel.networkSide.opposite) }
             HStack {
                     Button { viewModel.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                        .disabled(viewModel.activePly == 0).accessibilityLabel("悔棋")
+                        .disabled(viewModel.activePly == 0 || viewModel.networkActive).accessibilityLabel("悔棋")
                     Button { viewModel.goToPly(viewModel.activePly + 1) } label: { Image(systemName: "arrow.uturn.forward") }
-                        .disabled(viewModel.activePly >= viewModel.history.count).accessibilityLabel("前进")
+                        .disabled(viewModel.activePly >= viewModel.history.count || viewModel.networkActive).accessibilityLabel("前进")
                     Spacer()
-                    candidateArrowToggle
+                    candidateArrowToggle.disabled(viewModel.networkActive)
                     Spacer()
                     Label("\(viewModel.sideToMove.title)走棋", systemImage: "circle.fill")
                         .font(.headline)
@@ -305,17 +333,31 @@ struct ContentView: View {
                     }
                     .accessibilityLabel(viewModel.boardFlipped ? "切换为红方视角" : "切换为黑方视角")
                     Button { viewModel.reset() } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("重开")
+                        .disabled(viewModel.networkActive).accessibilityLabel("重开")
             }
             .buttonStyle(.borderless)
             XiangqiBoardView(viewModel: viewModel)
+            if viewModel.networkActive && !viewModel.networkWatching { playerClock(viewModel.networkSide) }
+            if viewModel.networkActive { DuelOperationsView(duel:duel,lobby:lobby,board:viewModel) }
             if viewModel.gameMode == .setup { setupControls }
-            HStack(spacing: 7) {
+            if !viewModel.networkActive { HStack(spacing: 7) {
                 Circle().fill(green).frame(width: 8, height: 8)
                 Text(boardHint).font(.caption).foregroundStyle(.secondary)
-            }
+            } }
         }
         .id("coach-board")
+    }
+
+    private func playerClock(_ side: XiangqiSide) -> some View {
+        let accountName = lobby.game?[side.rawValue] as? String ?? "棋友"
+        let nickname = accountName == lobby.account?.name ? lobby.account?.nickname ?? accountName : lobby.friends.first(where:{$0.name == accountName})?.nickname ?? accountName
+        return HStack(spacing:10) {
+            Text(String(nickname.prefix(1))).font(.headline).frame(width:34,height:34)
+                .background(side == .red ? red.opacity(0.15) : green.opacity(0.15),in:Circle())
+            VStack(alignment:.leading,spacing:2) { Text(nickname).font(.subheadline.bold()).lineLimit(1); Text(side.title).font(.caption2).foregroundStyle(.secondary) }
+            Spacer(minLength:4)
+            Text(duel.timeText(side:side)).font(.system(.caption,design:.monospaced)).lineLimit(1).minimumScaleFactor(0.8)
+        }.padding(10).background(surface,in:RoundedRectangle(cornerRadius:14))
     }
 
     private var gameModeControls: some View {

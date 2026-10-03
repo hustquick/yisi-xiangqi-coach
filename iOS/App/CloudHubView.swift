@@ -4,6 +4,7 @@ struct CloudHubView: View {
     @ObservedObject var lobby: CloudLobbyModel
     var friendsPage: Bool
     var review: ([String: Any]) -> Void = { _ in }
+    var watch: (String) -> Void = { _ in }
     @State private var name = ""
     @State private var password = ""
     @State private var confirmation = ""
@@ -11,6 +12,11 @@ struct CloudHubView: View {
     @State private var newName = ""
     @State private var registering = false
     @State private var showRename = false
+    @State private var minutes = 15
+    @State private var side = "red"
+    @State private var swapSides = true
+    @State private var historySheet = false
+    @State private var removeFriend: CloudLobbyModel.Person?
 
     var body: some View {
         NavigationStack {
@@ -31,7 +37,17 @@ struct CloudHubView: View {
                     }.padding().background(.regularMaterial)
                 }
             }
-            .task {
+            .sheet(isPresented: $historySheet) {
+                NavigationStack {
+                    List { ForEach(Array(lobby.history.enumerated()),id:\.offset) { _, game in historyRow(game) } }
+                        .navigationTitle("双方历史")
+                        .toolbar { Button("完成") { historySheet = false } }
+                }
+            }
+            .confirmationDialog("移除这位好友？", isPresented: Binding(get: { removeFriend != nil }, set: { if !$0 { removeFriend = nil } })) {
+                if let friend = removeFriend { Button("移除好友",role:.destructive) { Task { await lobby.action("friends/remove",["name":friend.name]); await lobby.refreshFriends() } } }
+            }
+            .task(id: lobby.account?.name) {
                 if lobby.account != nil {
                     if friendsPage { await lobby.refreshFriends() }
                     else { await lobby.refreshHistory(); await lobby.refreshRecords() }
@@ -70,6 +86,37 @@ struct CloudHubView: View {
     }
     private var friendsList: some View {
         List {
+            if let invitation = lobby.invitation {
+                Section("对战邀请") {
+                    let profile = invitation["fromProfile"] as? [String: Any] ?? [:]
+                    Text("\(profile["nickname"] as? String ?? invitation["from"] as? String ?? "棋友") 邀请你对战").font(.headline)
+                    Text("每方 \(invitation["minutes"] as? Int ?? 15) 分钟 · 你执\(invitation["side"] as? String == "red" ? "黑" : "红") · \(invitation["swapSides"] as? Bool == false ? "固定执棋" : "交替执棋")").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("接受对战") { Task { await lobby.action("respond",["id":invitation["id"] ?? "","accept":true]) } }.buttonStyle(.borderedProminent)
+                        Button("拒绝") { Task { await lobby.action("respond",["id":invitation["id"] ?? "","accept":false]); lobby.invitation = nil } }.buttonStyle(.bordered)
+                    }
+                }
+            }
+            if !lobby.engaged {
+                Section("网络对战") {
+                    HStack {
+                        ForEach([5,10,15],id:\.self) { value in
+                            Button("\(value) 分钟") { minutes = value }
+                                .buttonStyle(.bordered).tint(minutes == value ? .green : .secondary)
+                        }
+                        Menu("更多") { ForEach([30,45],id:\.self) { value in Button("\(value) 分钟") { minutes = value } } }
+                    }.disabled(lobby.matching)
+                    if minutes > 15 { Text("每方 \(minutes) 分钟").font(.caption) }
+                    if lobby.matching {
+                        HStack { ProgressView(); Text("等待 \(minutes) 分钟对局…"); Spacer(); Button("取消") { Task { await lobby.action("match/leave") } } }
+                    } else {
+                        Button { Task { await lobby.action("match/join",["minutes":minutes],success:"正在匹配…") } } label: { Label("自动匹配",systemImage:"shuffle") }
+                            .disabled(!lobby.online)
+                    }
+                    Picker("本局执棋",selection:$side) { Text("执红").tag("red"); Text("执黑").tag("black") }.pickerStyle(.segmented)
+                    Toggle("下一局交替执棋",isOn:$swapSides)
+                }
+            }
             Section {
                 HStack {
                     TextField("名称或数字 ID", text: $query).autocorrectionDisabled().textInputAutocapitalization(.never)
@@ -116,13 +163,20 @@ struct CloudHubView: View {
         VStack(alignment: .leading, spacing: 8) {
             identity(person)
             HStack {
+                if person.online && !person.busy {
+                    Button("邀请对战") { Task { await lobby.action("invite",["to":person.name,"side":side,"swapSides":swapSides,"minutes":minutes],success:"邀请已发出，等待应战") } }
+                        .buttonStyle(.borderedProminent).disabled(lobby.engaged || lobby.matching)
+                }
+                if isFriend && person.online && person.busy {
+                    Button("观看对弈") { watch(person.name) }.buttonStyle(.borderedProminent).disabled(lobby.engaged || lobby.matching)
+                }
                 if !isFriend {
                     Button("添加好友") { Task { await lobby.action("friends/add", ["name": person.name], success: "好友申请已发送") } }.buttonStyle(.bordered)
                 }
                 if isFriend {
                     Menu {
-                        Button("查看双方历史") { Task { await lobby.refreshHistory(opponentID: person.id) } }
-                        Button("移除好友", role: .destructive) { Task { await lobby.action("friends/remove", ["name": person.name]); await lobby.refreshFriends() } }
+                        Button("查看双方历史") { Task { await lobby.refreshHistory(opponentID: person.id); historySheet = true } }
+                        Button("移除好友", role: .destructive) { removeFriend = person }
                     } label: { Label("好友信息", systemImage: "ellipsis.circle") }
                 }
             }
@@ -151,7 +205,7 @@ struct CloudHubView: View {
                 ForEach(Array(lobby.records.enumerated()), id: \.offset) { _, record in
                     Button(record["title"] as? String ?? "棋谱") {
                         Task { if let value = try? await lobby.call("records/get", ["id": record["id"] as? String ?? ""]), let content = value["content"] as? [String: Any] { review(content) } }
-                    }
+                    }.disabled(lobby.engaged)
                 }
             }
         }
@@ -170,7 +224,7 @@ struct CloudHubView: View {
             if game["hasRecord"] as? Bool == true {
                 Button("复盘分析") {
                     Task { if let value = try? await lobby.call("history/get", ["id": game["id"] as? String ?? ""]), let content = value["content"] as? [String: Any] { review(content) } }
-                }
+                }.disabled(lobby.engaged)
             }
         }.padding(.vertical, 5)
     }

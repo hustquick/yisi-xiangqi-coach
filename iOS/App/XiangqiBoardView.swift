@@ -384,7 +384,7 @@ struct XiangqiBoardView: View {
                             .frame(width: metrics.cell * 0.92, height: metrics.cell * 0.92)
                     }
                     pieceDisc(piece, metrics: metrics)
-                    if selected {
+                    if selected || piece.uciSquare == viewModel.peerSquare {
                         Circle()
                             .stroke(Color.blue, lineWidth: max(3, metrics.cell * 0.055))
                             .frame(width: metrics.cell * 0.88, height: metrics.cell * 0.88)
@@ -393,7 +393,7 @@ struct XiangqiBoardView: View {
                 .frame(width: metrics.cell, height: metrics.cell)
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.isPreviewingVariation || viewModel.timelinePreviewPly != nil)
+            .disabled(viewModel.isPreviewingVariation || viewModel.timelinePreviewPly != nil || (viewModel.networkActive && !viewModel.canHumanMove))
             .position(boardPoint(metrics, file: piece.file, rank: piece.rank))
             .accessibilityLabel("\(piece.side.title)\(piece.name)")
         }

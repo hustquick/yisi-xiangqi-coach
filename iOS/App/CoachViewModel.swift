@@ -17,6 +17,12 @@ final class CoachViewModel: ObservableObject {
     @Published private(set) var isApplyingMove = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var selectedSquare: String?
+    @Published var networkActive = false
+    @Published var networkWatching = false
+    @Published var networkConnected = false
+    @Published var networkSide: XiangqiSide = .red
+    @Published var peerSquare: String?
+    var networkMove: ((String) -> Bool)?
     @Published private(set) var analysisDepth = 12
     @Published private(set) var showsCandidateArrows = false
     @Published private(set) var boardFlipped = false
@@ -64,7 +70,7 @@ final class CoachViewModel: ObservableObject {
         return variationPreviewFrames[variationPreviewIndex]
     }
     var isPreviewingVariation: Bool { variationPreviewFrame != nil }
-    var canHumanMove: Bool { gameOutcome == nil && gameMode != .setup && (gameMode != .computer || sideToMove == humanSide) }
+    var canHumanMove: Bool { gameOutcome == nil && gameMode != .setup && (!networkActive || (!networkWatching && networkConnected && sideToMove == networkSide)) && (gameMode != .computer || sideToMove == humanSide) }
     var displayedPieces: [BoardPiece] {
         if let frame = variationPreviewFrame {
             guard let moving = frame.movingPiece else { return frame.pieces }
@@ -282,6 +288,7 @@ final class CoachViewModel: ObservableObject {
     func finishSetup() { setGameMode(.local) }
 
     func toggleCandidateArrows() {
+        guard !networkActive else { return }
         showsCandidateArrows.toggle()
     }
 
@@ -410,7 +417,8 @@ final class CoachViewModel: ObservableObject {
         if selectedLegalMoves.contains(move) { play(move) }
     }
 
-    func play(_ move: String) {
+    func play(_ move: String, remote: Bool = false) {
+        if networkActive && !remote && !canHumanMove { return }
         guard gameMode != .setup, !isApplyingMove,
               let requested = ChineseNotation.coordinates(move),
               let rulePiece = pieces.first(where: {
@@ -423,6 +431,7 @@ final class CoachViewModel: ObservableObject {
                   $0.file == points.fromFile && $0.rank == points.fromRank
               })
         else { return }
+        if networkActive && !remote && networkMove?(move) != true { return }
         cancelComputerMove()
         stopAllPreviews()
         previewedCandidateMove = nil
@@ -482,11 +491,13 @@ final class CoachViewModel: ObservableObject {
     }
 
     func undo() {
+        guard !networkActive else { return }
         guard activePly > 0 else { return }
         goToPly(activePly - 1)
     }
 
     func goToPly(_ ply: Int) {
+        guard !networkActive else { return }
         cancelComputerMove()
         stopAllPreviews()
         previewedCandidateMove = nil
@@ -621,6 +632,7 @@ final class CoachViewModel: ObservableObject {
     private func select(_ piece: BoardPiece) {
         previewedCandidateMove = nil
         selectedSquare = piece.uciSquare
+        if networkActive { selectedLines = []; isAnalyzingSelection = false; return }
         selectedLines = []
         isAnalyzingSelection = true
         let moves = XiangqiRules.legalMoves(for: piece, pieces: pieces)
@@ -709,6 +721,7 @@ final class CoachViewModel: ObservableObject {
     }
 
     private func refreshAnalysis() {
+        guard !networkActive else { return }
         guard gameMode != .setup, gameOutcome == nil else { return }
         positionAnalysisTask?.cancel()
         let fenAtStart = fen
@@ -786,6 +799,7 @@ final class CoachViewModel: ObservableObject {
     }
 
     private func scheduleScoreBackfill() {
+        guard !networkActive else { return }
         scoreBackfillTask?.cancel()
         guard gameMode != .setup, gameOutcome == nil else { return }
         let missing = (0...history.count).filter { positionScores[$0] == nil && $0 != activePly }
@@ -816,7 +830,7 @@ final class CoachViewModel: ObservableObject {
         let nextOutcome = gameMode == .setup ? nil : XiangqiRules.outcome(for: sideToMove, pieces: pieces)
         if nextOutcome != gameOutcome {
             gameOutcome = nextOutcome
-            isShowingGameOutcome = nextOutcome != nil
+            isShowingGameOutcome = nextOutcome != nil && !networkActive
         }
         if gameOutcome != nil {
             cancelComputerMove()
@@ -828,6 +842,31 @@ final class CoachViewModel: ObservableObject {
             globalLines = []
             selectedLines = []
         }
+    }
+
+    func configureNetwork(active: Bool, side: XiangqiSide = .red, watching: Bool = false) {
+        networkActive = active; networkWatching = watching; networkSide = side
+        networkConnected = false; peerSquare = nil
+        cancelComputerMove(); stopAllPreviews(); engine.stop()
+        positionAnalysisTask?.cancel(); selectionAnalysisTask?.cancel(); scoreBackfillTask?.cancel()
+        positionGeneration = UUID(); selectionGeneration = UUID()
+        isAnalyzing = false; isAnalyzingSelection = false; globalLines = []; selectedLines = []
+        showsCandidateArrows = false; gameMode = .local; clearSelection()
+        boardFlipped = side == .black
+        isShowingGameOutcome = false
+        if !active { refreshAnalysis() }
+    }
+
+    var cloudRecord: [String: Any] {
+        CloudRecordCodec.encode(startFEN: history.first?.beforeFEN ?? fen,
+            moves: Array(history.prefix(activePly)).map(\.uci), title: recordTitle)
+    }
+    var cloudPosition: String { CloudRecordCodec.fen(pieces: pieces, turn: sideToMove, ply: activePly) }
+
+    func loadCloudRecord(_ value: [String: Any], review: Bool = false) throws {
+        let saved = try CloudRecordCodec.decode(value)
+        loadRecord(startFEN: saved.fen, moves: saved.moves, title: saved.title, requestedPly: review ? 0 : saved.moves.count)
+        recordMessage = nil
     }
 
     private func editSetup(file: Int, rank: Int) {
