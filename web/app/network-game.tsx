@@ -11,6 +11,7 @@ export function useNetworkGame(options: {
   record?: () => unknown;
   review?: (saved:any) => void;
   watch?: (saved:any) => void;
+  focusBoard?: () => void;
   receive: (from: [number, number], to: [number, number]) => boolean;
 }) {
   const latest = useRef(options); latest.current = options;
@@ -51,7 +52,11 @@ export function useNetworkGame(options: {
   function receiveWatch(result:any) {
     watchRevision.current++;
     const encoded=JSON.stringify(result.content);
-    if(result.content && encoded!==watchedContent.current) {latest.current.watch?.(result.content);watchedContent.current=encoded;}
+    if(result.content && encoded!==watchedContent.current) {
+      const entering=!watchedContent.current;
+      latest.current.watch?.(result.content);watchedContent.current=encoded;
+      if(entering) latest.current.focusBoard?.();
+    }
     setPeerSelected(result.selected??null);
   }
   const [drawOffer,setDrawOffer] = useState(false), [roundEnding,setRoundEnding] = useState(false);

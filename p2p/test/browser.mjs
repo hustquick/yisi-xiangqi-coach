@@ -143,6 +143,12 @@ try {
   await a.getByRole('button',{name:'同意好友申请',exact:true}).click();
   await c.getByRole('button',{name:'观看对弈',exact:true}).click();
   await c.getByRole('button',{name:'退出观战',exact:true}).waitFor();
+  await c.waitForFunction(()=>document.activeElement?.classList.contains('board'));
+  await c.waitForFunction(()=>{
+    const board=document.querySelector('.board').getBoundingClientRect();
+    return Math.abs((board.top+board.bottom)/2-innerHeight/2)<30;
+  });
+  await c.getByRole('button',{name:'退出观战',exact:true}).focus();
   assert.equal(await c.getByRole('button',{name:'显示最优着法',exact:true}).isDisabled(),true);
   const red = page => page.getByRole('button', { name: '红兵', exact: true }).first();
   await a.getByRole('button',{name:'红兵',exact:true}).first().click();
@@ -155,6 +161,7 @@ try {
   await b.locator('.piece.peer-selected').waitFor({state:'detached'});
   await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
   await c.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
+  assert.equal(await c.evaluate(()=>document.activeElement?.textContent),'退出观战','后续落子更新不抢走观战者焦点');
   assert.ok(Date.now()-spectatorMoveStarted<2000,'观战落子即时推送，不再叠加两轮轮询');
   await c.locator('.piece.peer-selected').waitFor({state:'detached'});
   assert.equal(await a.getByRole('button',{name:'黑卒',exact:true}).first().isDisabled(),true,'行棋后不能摸对方棋子');

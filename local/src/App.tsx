@@ -1136,6 +1136,13 @@ export default function Home() {
   const network = useNetworkGame({
     position: positionFen(pieces, turn, activePly), ply: activePly, turn,
     selected: selected ? (()=>{const p=pieces.find(p=>p.id===selected);return p ? [p.x,p.y] as [number,number] : null;})() : null,
+    focusBoard: () => {
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const board=boardSectionRef.current?.querySelector<HTMLElement>('.board');
+        board?.focus({preventScroll:true});
+        board?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+      }));
+    },
     start: () => {
       setGameMode("local"); reset(true);
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
