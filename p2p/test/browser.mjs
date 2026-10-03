@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: process.env.P2P_TEST_ENDPOINT ? ['--disable-features=LocalNetworkAccessChecks'] : [] });
 const errors = [];
 try {
   const a = await browser.newPage(), b = await browser.newPage(), c=await browser.newPage();
@@ -30,6 +30,7 @@ try {
   }, process.env.P2P_TEST_RELAY === '1');
   for (const page of [a, b, c]) page.on('pageerror', e => errors.push(e.message));
   if(process.env.P2P_TEST_DEBUG) for(const page of [a,b,c]) {
+    page.on('console',message=>{if(message.type()==='error')console.log(message.text());});
     page.on('response',async response=>{if(response.status()>=400 || response.url().endsWith('/watch/selection')) console.log(new URL(response.url()).pathname,response.status(),await response.text());});
     page.on('requestfailed',request=>console.log('failed',new URL(request.url()).pathname,request.failure()));
   }
@@ -176,6 +177,21 @@ try {
   await a.getByRole('status').filter({hasText:'对战已连接'}).waitFor();
   assert.equal(await red(a).getAttribute('style'),after,'刷新后保持登录并恢复原棋局');
   assert.equal(await a.getByRole('button',{name:'重开',exact:true}).isDisabled(),true,'刷新仍在原对局');
+  await b.evaluate(()=>localStorage.removeItem('yisi-network-session'));
+  await b.reload({waitUntil:'domcontentloaded'});
+  await b.getByLabel('网络账号',{exact:true}).fill(`test${stamp}b`);
+  await b.getByLabel('网络密码',{exact:true}).fill('1');
+  await b.getByRole('button',{name:'登录',exact:true}).click();
+  for(const page of [a,b]) await page.getByRole('status').filter({hasText:'对战已连接'}).waitFor();
+  assert.equal(await red(a).getAttribute('style'),after,'重新登录恢复棋局不重开');
+  const continued=a.waitForResponse(response=>response.url().endsWith('/clock/move') && response.ok());
+  await move(a,'红兵','0,4');await continued;
+  await b.waitForFunction(()=>document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
+  assert.equal(await b.getByRole('button',{name:'黑卒',exact:true}).first().isDisabled(),false,'重新登录后可以继续轮到己方的棋步');
+  const resumedMove=b.waitForResponse(response=>response.url().endsWith('/clock/move') && response.ok());
+  await move(b,'黑卒','2,4');await resumedMove;
+  await a.waitForFunction(()=>document.querySelector('.piece.black[aria-label="黑卒"]')?.getAttribute('style')?.includes('44.444'));
+  const resumedPosition=await red(a).getAttribute('style');
   await a.getByText('对局操作',{exact:true}).click();
   for(const page of [a,b]) assert.equal(await page.getByRole('button',{name:'同意加时',exact:true}).count(),0,'未收到请求不显示同意按钮');
   await a.getByRole('button',{name:'申请加时',exact:true}).click();
@@ -204,7 +220,7 @@ try {
   await a.getByRole('button', { name: '重连并核对局面', exact: true }).waitFor();
   await a.getByRole('button', { name: '重连并核对局面', exact: true }).click();
   for (const page of [a, b]) await page.getByRole('status').filter({ hasText: '双方局面一致' }).waitFor({ timeout: 30000 });
-  assert.equal(await red(a).getAttribute('style'), after, '重连保留局面');
+  assert.equal(await red(a).getAttribute('style'), resumedPosition, '重连保留局面');
   }
   await a.getByRole('button', { name: '退出对局', exact: true }).click();
   await b.getByRole('status').filter({ hasText: '对局已结束' }).waitFor();
@@ -223,5 +239,5 @@ try {
   await a.getByRole('status').filter({hasText:'账号已在其他设备登录，本端已退出'}).waitFor();
   assert.equal(await a.getByRole('combobox',{name:'账户状态',exact:true}).count(),0,'旧端自动退出登录');
   assert.deepEqual(errors, []);
-  console.log('PASS cloud registration + invitation + real WebRTC + two legal moves + reset lock + reconnect + leave');
+  console.log('PASS registration + invitation + real WebRTC + refresh + password re-login + continued moves + reconnect + leave');
 } finally { await browser.close(); }

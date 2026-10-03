@@ -1935,7 +1935,7 @@ export default function Home() {
           </button>
         </div>
       </section>}
-      {recordMessage && <div className="record-message">{recordMessage}<button onClick={() => setRecordMessage("")}>×</button></div>}
+      {recordMessage && <div className="record-message" role="status">{recordMessage}<button onClick={() => setRecordMessage("")}>×</button></div>}
 
       <section className="workspace">
         <div className="board-wrap" ref={boardSectionRef}>
@@ -2326,7 +2326,7 @@ export default function Home() {
           {!cloudRecords.length && <p>暂无云端棋谱</p>}
           {cloudRecords.map(record => <div key={record.id}><span>{record.title}</span><button disabled={cloudBusy || network.active} onClick={() => void cloudRecord('load', record.id)}>载入</button><button disabled={cloudBusy} onClick={() => void cloudRecord('download', record.id)}>下载</button></div>)}
         </section>}
-        {recordMessage && <p role="status">{recordMessage}</p>}
+        {recordMessage && <p>{recordMessage}</p>}
       </section></Collapsible>
       </div>
       </section>

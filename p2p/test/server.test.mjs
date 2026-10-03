@@ -31,8 +31,10 @@ test('断线提示、重新上线与断线超时自动结束',async()=>{
     const invite=await post('/invite',{to:b.name},a.token),game=await post('/respond',{id:invite.id,accept:true},b.token);
     first.abort();await new Promise(r=>setTimeout(r,60));
     assert.match(events,/peer-offline/);
-    const second=await connect(a);await new Promise(r=>setTimeout(r,300));
-    assert.match(events,/peer-online/);assert.equal((await post('/search',{name:b.id},a.token)).user.busy,true,'重连取消旧超时');
+    const relogged=await post('/login',{name:'offlineA',password:'1'});
+    const second=await connect(relogged);await new Promise(r=>setTimeout(r,300));
+    assert.match(events,new RegExp(game.gameId),'重新登录仍返回已有对局');
+    assert.match(events,/peer-online/);assert.equal((await post('/search',{name:b.id},relogged.token)).user.busy,true,'重连取消旧超时');
     second.abort();await new Promise(r=>setTimeout(r,350));
     assert.match(events,/disconnect-timeout/);
     assert.equal((await post('/search',{name:a.id},b.token)).user.busy,false);

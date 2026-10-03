@@ -60,7 +60,11 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   db.exec('DELETE FROM game_records WHERE game IN (SELECT id FROM game_history WHERE ended IS NULL AND (red_moved=0 OR black_moved=0)); DELETE FROM game_history WHERE ended IS NULL AND (red_moved=0 OR black_moved=0)');
   db.prepare("UPDATE game_history SET ended=?,result='服务中断',duration=MAX(0,?-started) WHERE ended IS NULL").run(now(),now());
   db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created INTEGER NOT NULL)');
-  const sessions = new Map(), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
+  db.exec('CREATE TABLE IF NOT EXISTS login_sessions (token TEXT PRIMARY KEY, name TEXT NOT NULL, expires INTEGER NOT NULL)');
+  db.prepare('DELETE FROM login_sessions WHERE expires<=?').run(now());
+  const sessionLifetime=30*24*60*60_000;
+  const sessions = new Map(db.prepare('SELECT * FROM login_sessions').all().map(row=>[row.token,{name:row.name,expires:row.expires}])), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
+  function deleteSession(key) {sessions.delete(key);db.prepare('DELETE FROM login_sessions WHERE token=?').run(key??'');}
   const offlineTimers=new Map();
   const watching=new Map();
   function publishWatch(game) {
@@ -82,7 +86,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   function authenticate(req) {
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     const session = sessions.get(bearer);
-    if (!session || session.expires <= now()) { sessions.delete(bearer); throw fail(401, '请重新登录'); }
+    if (!session || session.expires <= now()) { deleteSession(bearer); throw fail(401, '请重新登录'); }
+    if(session.expires-now()<sessionLifetime-24*60*60_000) {session.expires=now()+sessionLifetime;db.prepare('UPDATE login_sessions SET expires=? WHERE token=?').run(session.expires,bearer);}
     return session;
   }
   function send(name, data) {
@@ -185,12 +190,15 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           if (!user || !timingSafeEqual(actual, Buffer.from(user.hash, 'hex'))) throw fail(401, '账号或密码错误');
         }
         // One login per account, preventing competing clients from impersonating a side.
-        for(const game of [...games.values()]) if(game.members.includes(canonical)) closeGame(game,canonical);
-        for (const [key, session] of sessions) if (session.name === canonical) sessions.delete(key);
+        // Replace the credential, not the game: a reconnecting player must be
+        // able to resume the same board within the disconnect grace period.
+        for (const [key, session] of sessions) if (session.name === canonical) deleteSession(key);
         const previous = streams.get(canonical);
         if (previous) { send(canonical, { type: 'signed-out' }); previous.end(); streams.delete(canonical); }
         const accessToken = token();
-        sessions.set(accessToken, { name: canonical, expires: now() + 12 * 60 * 60_000 });
+        const expires=now()+sessionLifetime;
+        sessions.set(accessToken, { name: canonical, expires });
+        db.prepare('INSERT INTO login_sessions VALUES (?,?,?)').run(accessToken,canonical,expires);
         json(res, 200, { token: accessToken, name: canonical, ...profile(canonical), presence: invisible(canonical) ? 'invisible' : 'online', iceServers: connectionServers(canonical) }); return;
       }
       const session = authenticate(req), name = session.name;
@@ -317,7 +325,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (path === '/ice') { json(res, 200, { ...profile(name),presence:invisible(name)?'invisible':'online',iceServers: connectionServers(name) }); return; }
       if (path === '/logout') {
         for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name);
-        for (const [key, s] of sessions) if (s.name === name) sessions.delete(key);
+        for (const [key, s] of sessions) if (s.name === name) deleteSession(key);
         streams.get(name)?.end(); json(res, 200, { ok: true }); return;
       }
       if (path === '/invite') {
@@ -460,7 +468,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   });
   server.requestTimeout = 15_000;
   const maintenance = setInterval(() => {
-    for (const [key, s] of sessions) if (s.expires <= now()) { sessions.delete(key); streams.get(s.name)?.end(); }
+    for (const [key, s] of sessions) if (s.expires <= now()) { deleteSession(key); streams.get(s.name)?.end(); }
     for (const [key, value] of invites) if (value.expires <= now()) {
       invites.delete(key);
       for (const player of [value.from, value.to]) send(player, { type: 'invite-expired', id: key });
