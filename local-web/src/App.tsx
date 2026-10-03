@@ -1,6 +1,6 @@
 "use client";
 
-import { useNetworkGame } from "../../html/app/network-game";
+import { useNetworkGame } from "../../web/app/network-game";
 import { coachPlan } from './coach-hints';
 
 import React, {
@@ -18,7 +18,7 @@ function Collapsible({ title, children, open = false }: { title: string; childre
   return <details className="collapsible-module" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}><summary>{title}</summary><div className="collapsible-content">{children}</div></details>;
 }
 import { createPikafishWorker } from "./pikafish-worker";
-import { parseFen, parseXqf, SAVED_GAME_VERSION } from "../../html/app/game-record";
+import { parseFen, parseXqf, SAVED_GAME_VERSION } from "../../web/app/game-record";
 
 type Side = "red" | "black";
 type GameMode = "local" | "computer" | "setup";

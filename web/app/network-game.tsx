@@ -261,7 +261,7 @@ export function useNetworkGame(options: {
     try {
       if (active) throw new Error('请先退出当前对局');
       if (register && password !== confirmPassword) throw new Error('两次输入的密码不一致，请重新确认');
-      if (window.location.protocol === 'file:') throw new Error('当前打开的是离线文件，不能注册或登录。请从已发布的在线网页进入网络对战。');
+      if (window.location.protocol === 'file:') throw new Error('请使用文件夹中的“启动联网版”入口，或运行 npm run local，再打开 http://localhost:8080；双击 index.html 仅支持本地功能。');
       // Deployment configuration belongs to the application, never to the player UI.
       const configured = document.querySelector<HTMLMetaElement>('meta[name="yisi-network-endpoint"]')?.content;
       const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);

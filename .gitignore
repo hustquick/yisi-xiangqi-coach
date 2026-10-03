@@ -1,16 +1,16 @@
 .DS_Store
-/windowsHTML/node_modules/
+/local-web/node_modules/
 /p2p/.pages-dist/
 
 # HTML dependencies and generated output
-/html/node_modules/
-/html/.local/
-/html/.vinext/
-/html/.vite/
-/html/.wrangler/
-/html/dist/
-/html/coverage/
-/html/tsconfig.tsbuildinfo
+/web/node_modules/
+/web/.local/
+/web/.vinext/
+/web/.vite/
+/web/.wrangler/
+/web/dist/
+/web/coverage/
+/web/tsconfig.tsbuildinfo
 
 # Android machine-local and generated output
 /android/.gradle/
@@ -27,4 +27,5 @@
 # Environment and debug files
 .env*
 *.log
+/local-web.zip
 /windowsHTML.zip

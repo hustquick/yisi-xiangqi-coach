@@ -2,14 +2,14 @@
 
 ## 网络对战联调版
 
-网页客户端新增账号注册 / 登录、在线邀请、WebRTC 双人对战、断线重连与双方走棋校验。账号与信令服务、中继服务已部署到自有 Oracle 云主机；目前通过本机 SSH 隧道完成联调，公网 HTTPS 与 Oracle 中继端口放行仍待配置。**现有 Android APK / iOS 原生应用尚不包含网络对战，不将其标作已完成。** 运行方式、验证范围和部署边界见 [网络对战说明](p2p/README.md)。
+网页客户端支持账号注册 / 登录、好友申请、邀请对战、好友观战和云端对局历史。账号、信令及中继服务已部署到 Oracle 云主机，通过 HTTPS 接入。`local-web` 使用相同云端账号和联网功能，但计算引擎从本机加载；运行方法见 [本地运行版说明](local-web/README.md)。**现有 Android APK / iOS 原生应用尚不包含网络对战，不将其标作已完成。** 运行方式、验证范围和部署边界见 [网络对战说明](p2p/README.md)。
 
 ## 最新版本下载
 
 无需自行编译，前往 [最新发布页](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest) 下载：
 
 - [Android 安装包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-android-arm64.apk)：Android 8.0 及以上、ARM64，已签名的 Debug 侧载版，内置离线引擎。
-- [离线 HTML 完整包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-windows-html.zip)：完整解压后，用 Edge 或 Chrome 打开 `windowsHTML/index.html`，无需服务器或联网。
+- [历史离线 HTML 完整包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-windows-html.zip)：仅对应旧发布版本，完整解压后打开其中的 `index.html`；旧包可能仍使用 `windowsHTML` 目录名。最新联网功能请使用仓库中的 `local-web` 或 [在线网页版](https://yisi-xiangqi-pwa.pages.dev/)。
 - 发布页同时提供 `SHA256SUMS.txt`、对应源码包和构建说明。
 
 安装 APK 时需允许下载所用应用“安装未知应用”。HTML 请勿只复制 `index.html`，也不要在压缩包预览中直接打开。更新前建议先导出重要棋谱。
@@ -37,13 +37,14 @@
 - 一键切换红方或黑方视角，棋子、路数、落点和候选箭头会同步旋转
 - 支持悔棋、重开、走法记录、候选着详情和双击候选直接落子
 
-HTML、iOS、Android（以及离线 WindowsHTML 源码）统一使用 1320–3100 的十档参考 Elo，默认“业余九级（2100）”。这些名称用于模拟逐级挑战的学习体验，不是天天象棋官方等级换算，也不能与国际象棋 Elo 直接横向比较。限强仅用于电脑实际走棋；教练分析仍以完整强度给出候选。
+HTML、iOS、Android（以及离线 local-web 源码）统一使用 1320–3100 的十档参考 Elo，默认“业余九级（2100）”。这些名称用于模拟逐级挑战的学习体验，不是天天象棋官方等级换算，也不能与国际象棋 Elo 直接横向比较。限强仅用于电脑实际走棋；教练分析仍以完整强度给出候选。
 
 ## 仓库结构
 
 ```text
 .
-├── html/       HTML 版，基于 React、vinext 和 Vite
+├── web/        网页服务版源码，基于 React、vinext 和 Vite
+├── local-web/  本地运行版，浏览器内运行计算引擎；支持 Windows、macOS，Linux 尚未验证
 ├── iOS/        SwiftUI 应用、Objective-C++ 桥接和 Pikafish 源码
 ├── android/    Android 原生应用、JNI 桥接和 Gradle 工程
 └── README.md   项目总览与安装说明
@@ -65,21 +66,21 @@ HTML、iOS、Android（以及离线 WindowsHTML 源码）统一使用 1320–310
 1. 安装 JavaScript 依赖：
 
    ```bash
-   npm --prefix html install
+   npm --prefix web install
    ```
 
 2. 首次使用时下载并编译原生 Pikafish，同时下载 NNUE：
 
    ```bash
-   npm --prefix html run engine:setup
+   npm --prefix web run engine:setup
    ```
 
-   引擎会安装到 `html/.local/pikafish/`。此步完成后，日常使用不需要重复下载。
+   引擎会安装到 `web/.local/pikafish/`。此步完成后，日常使用不需要重复下载。
 
 3. 同时启动原生引擎服务和 HTML 开发服务器：
 
    ```bash
-   npm --prefix html run local
+   npm --prefix web run local
    ```
 
 4. 在浏览器打开 <http://localhost:3000/>。
@@ -89,14 +90,14 @@ HTML、iOS、Android（以及离线 WindowsHTML 源码）统一使用 1320–310
 ### 其他 HTML 命令
 
 ```bash
-npm --prefix html run dev      # 只启动网页开发服务器
-npm --prefix html run build    # 生成生产构建
-npm --prefix html run start    # 启动已构建的生产版
-npm --prefix html test         # 构建并运行页面功能测试
-npm --prefix html run lint     # 运行 ESLint
+npm --prefix web run dev      # 只启动网页开发服务器
+npm --prefix web run build    # 生成生产构建
+npm --prefix web run start    # 启动已构建的生产版
+npm --prefix web test         # 构建并运行页面功能测试
+npm --prefix web run lint     # 运行 ESLint
 ```
 
-更多 HTML 实现说明见 [`html/README.md`](html/README.md)。
+更多 HTML 实现说明见 [`web/README.md`](web/README.md)。
 
 ## iOS 版
 
@@ -191,7 +192,7 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 ```bash
 # HTML
-npm --prefix html test
+npm --prefix web test
 
 # iOS（不签名）
 xcodebuild -project iOS/YisiXiangqiCoach.xcodeproj \
@@ -208,7 +209,7 @@ android/gradlew -p android assembleDebug
 
 ### HTML 提示 Pikafish 未安装
 
-运行 `npm --prefix html run engine:setup`。确认 `html/.local/pikafish/` 下同时存在 `pikafish` 和 `pikafish.nnue`。
+运行 `npm --prefix web run engine:setup`。确认 `web/.local/pikafish/` 下同时存在 `pikafish` 和 `pikafish.nnue`。
 
 ### `3000` 或 `8789` 端口已被占用
 
@@ -233,5 +234,5 @@ android/gradlew -p android assembleDebug
 项目内置的 Pikafish 固定于提交 `b21805624cead52b308f576fc10de7f0e27b984f`，并按 GPL-3.0 发布。相关许可证与来源说明见：
 
 - [`iOS/ThirdParty/Pikafish/COPYING.txt`](iOS/ThirdParty/Pikafish/COPYING.txt)
-- [`html/public/pikafish/COPYING.txt`](html/public/pikafish/COPYING.txt)
-- [`html/public/pikafish/SOURCE.md`](html/public/pikafish/SOURCE.md)
+- [`web/public/pikafish/COPYING.txt`](web/public/pikafish/COPYING.txt)
+- [`web/public/pikafish/SOURCE.md`](web/public/pikafish/SOURCE.md)

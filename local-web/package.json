@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "local": "node start-local.mjs --open",
+    "test": "node --test test/*.test.mjs",
     "build": "node build.mjs"
   },
   "dependencies": {
