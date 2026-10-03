@@ -393,7 +393,9 @@ struct XiangqiBoardView: View {
                 .frame(width: metrics.cell, height: metrics.cell)
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.isPreviewingVariation || viewModel.timelinePreviewPly != nil || (viewModel.networkActive && !viewModel.canHumanMove))
+            // A waiting turn is not a disabled-looking board. Block hit testing
+            // without SwiftUI's disabled tint; tap also checks turn ownership.
+            .allowsHitTesting(!viewModel.isPreviewingVariation && viewModel.timelinePreviewPly == nil && (!viewModel.networkActive || viewModel.canHumanMove))
             .position(boardPoint(metrics, file: piece.file, rank: piece.rank))
             .accessibilityLabel("\(piece.side.title)\(piece.name)")
         }

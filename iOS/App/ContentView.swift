@@ -620,10 +620,10 @@ struct ContentView: View {
                     Text("\(viewModel.completedRounds)").font(.title.bold()).monospacedDigit()
                     Text("已走回合").font(.caption).foregroundStyle(.secondary)
                 }
-                VStack(alignment: .leading) {
+                if !viewModel.networkActive { VStack(alignment: .leading) {
                     Text(viewModel.activePly == 0 ? "—" : viewModel.review.grade).font(.title3.bold())
                     Text("本步质量").font(.caption).foregroundStyle(.secondary)
-                }
+                } }
                 Spacer()
                 Text("双方各走一步计 1 回合").font(.caption).foregroundStyle(.secondary)
             }

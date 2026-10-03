@@ -1,8 +1,51 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import YisiXiangqiCoach
 
 @MainActor final class MobileIntegrationTests: XCTestCase {
+    func testWaitingBoardKeepsFullColorAndCannotTouch() throws {
+        let board = CoachViewModel()
+        board.configureNetwork(active:true,side:.red)
+        board.networkConnected = true
+        func render() throws -> Data {
+            let renderer = ImageRenderer(content:XiangqiBoardView(viewModel:board).frame(width:360,height:470))
+            return try XCTUnwrap(renderer.uiImage?.pngData())
+        }
+        let active = try render()
+        board.networkConnected = false
+        let waiting = try render()
+        XCTAssertEqual(active,waiting,"Waiting must not fade the pieces")
+        board.tap(file:0,rank:6)
+        XCTAssertNil(board.selectedSquare)
+        XCTAssertFalse(board.canHumanMove)
+    }
+    func testCloudMatchmakingAndCancel() async throws {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let a = CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.match.a"))
+        let b = CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.match.b"))
+        await a.authenticate(name:"Match\(stamp)A",password:"1",confirmation:"1",registering:true)
+        await b.authenticate(name:"Match\(stamp)B",password:"1",confirmation:"1",registering:true)
+        do {
+            try await waitUntil({a.online && b.online})
+            _ = try await a.call("match/join",["minutes":15])
+            try await waitUntil({a.matching})
+            _ = try await a.call("match/leave")
+            try await waitUntil({!a.matching})
+            _ = try await a.call("match/join",["minutes":15])
+            _ = try await b.call("match/join",["minutes":15])
+            try await waitUntil({a.gameID != nil && b.gameID == a.gameID})
+            XCTAssertFalse(a.matching); XCTAssertFalse(b.matching)
+            XCTAssertTrue(a.engaged); XCTAssertTrue(b.engaged)
+            _ = try await a.call("leave",["gameId":a.gameID!])
+            try await waitUntil({!b.engaged})
+            NSLog("MOBILE TEST: deployed matchmaking queue, cancel and pairing verified")
+            await a.logout(); await b.logout()
+        } catch {
+            if let id = a.gameID { _ = try? await a.call("leave",["gameId":id]) }
+            await a.logout(); await b.logout(); throw error
+        }
+    }
     func testSpectatorReadOnlyAndLiveSelection() async throws {
         let stamp = Int(Date().timeIntervalSince1970)
         let players = (0..<3).map { CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.watch.\($0)")) }
