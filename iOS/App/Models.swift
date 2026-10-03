@@ -12,7 +12,7 @@ enum GameMode: String, CaseIterable, Identifiable, Sendable {
     case local, computer, setup
     var id: String { rawValue }
     var title: String {
-        switch self { case .local: "双人对弈"; case .computer: "人机对战"; case .setup: "摆盘" }
+        switch self { case .local: "对弈分析"; case .computer: "人机对战"; case .setup: "摆盘" }
     }
 }
 

@@ -6,10 +6,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		310C6A622C36DC7121FE6E99 /* CloudAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */; };
+		51F31323BCECC05844FAE53A /* CloudHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */; };
+		F117EDA2DD46D0C0ACD36563 /* CloudLobbyModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */; };
 		DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3C674C49F9230A78013C04 /* CoachViewModel.swift */; };
 		FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA066BDAE191C6841E031821 /* ContentView.swift */; };
+		5B22B5E151766F7282AA0890 /* GameRecordIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */; };
 		42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B177F71919F3F1954FEC147 /* Models.swift */; };
-		A11B22C33D44E55F66778899 /* GameRecordIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11B22C33D44E55F66778899 /* GameRecordIO.swift */; };
 		FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */; };
 		95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14AFC80628C6ED48441B5DEE /* SituationChartView.swift */; };
 		384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */; };
@@ -51,16 +54,19 @@
 		C002E51A801D41546273E49A /* uci.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 514C5BEA88B076530B55BDE2 /* uci.cpp */; };
 		137AF2DED93E4EDC45BF4989 /* ucioption.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 39E3381B0441CAE2D626FAA7 /* ucioption.cpp */; };
 		2AA1EC5B3154FCAC2D91AFB5 /* AppIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = D3A9120341B20E5418773811 /* AppIcon.png */; };
-		A93408E6930566449BF87748 /* AppIconDark.png in Resources */ = {isa = PBXBuildFile; fileRef = 3C75091F7640E5D2B10E4216 /* AppIconDark.png */; };
+		4318114FF7457E334B1C3E06 /* AppIconDark.png in Resources */ = {isa = PBXBuildFile; fileRef = 3D7CE2C41BF2E2B4C9DDBC69 /* AppIconDark.png */; };
 		3D234ADC3FCACE4935C47F40 /* pikafish.nnue in Resources */ = {isa = PBXBuildFile; fileRef = 4A965416918068E2EA465D78 /* pikafish.nnue */; };
 		4134C72EF01F92F012DF729B /* COPYING.txt in Resources */ = {isa = PBXBuildFile; fileRef = 34497955DC4CB4AF0E072134 /* COPYING.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudAccountClient.swift; sourceTree = "<group>"; };
+		605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudHubView.swift; sourceTree = "<group>"; };
+		48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CloudLobbyModel.swift; sourceTree = "<group>"; };
 		7E3C674C49F9230A78013C04 /* CoachViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/CoachViewModel.swift; sourceTree = "<group>"; };
 		BA066BDAE191C6841E031821 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/ContentView.swift; sourceTree = "<group>"; };
+		7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/GameRecordIO.swift; sourceTree = "<group>"; };
 		4B177F71919F3F1954FEC147 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/Models.swift; sourceTree = "<group>"; };
-		B11B22C33D44E55F66778899 /* GameRecordIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/GameRecordIO.swift; sourceTree = "<group>"; };
 		5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PikafishService.swift; sourceTree = "<group>"; };
 		14AFC80628C6ED48441B5DEE /* SituationChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SituationChartView.swift; sourceTree = "<group>"; };
 		D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/XiangqiBoardView.swift; sourceTree = "<group>"; };
@@ -102,7 +108,7 @@
 		514C5BEA88B076530B55BDE2 /* uci.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ThirdParty/Pikafish/src/uci.cpp; sourceTree = "<group>"; };
 		39E3381B0441CAE2D626FAA7 /* ucioption.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ThirdParty/Pikafish/src/ucioption.cpp; sourceTree = "<group>"; };
 		D3A9120341B20E5418773811 /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = App/Resources/AppIcon.png; sourceTree = "<group>"; };
-		3C75091F7640E5D2B10E4216 /* AppIconDark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = App/Resources/AppIconDark.png; sourceTree = "<group>"; };
+		3D7CE2C41BF2E2B4C9DDBC69 /* AppIconDark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = App/Resources/AppIconDark.png; sourceTree = "<group>"; };
 		4A965416918068E2EA465D78 /* pikafish.nnue */ = {isa = PBXFileReference; lastKnownFileType = file; path = App/Resources/pikafish.nnue; sourceTree = "<group>"; };
 		34497955DC4CB4AF0E072134 /* COPYING.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdParty/Pikafish/COPYING.txt; sourceTree = "<group>"; };
 		E090EADBFB50D7D38C4AD264 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = App/Info.plist; sourceTree = "<group>"; };
@@ -129,16 +135,19 @@
 		3C3B0F03DC089F93B8457928 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				3E230970EFF5DB44DC5EFD66 /* CloudAccountClient.swift */,
+				605DD8F39E5913B0B9CBA29F /* CloudHubView.swift */,
+				48A160C6EC0F90A649AEDC19 /* CloudLobbyModel.swift */,
 				7E3C674C49F9230A78013C04 /* CoachViewModel.swift */,
 				BA066BDAE191C6841E031821 /* ContentView.swift */,
+				7BD6CC41E2C1F843560E0557 /* GameRecordIO.swift */,
 				4B177F71919F3F1954FEC147 /* Models.swift */,
-				B11B22C33D44E55F66778899 /* GameRecordIO.swift */,
 				5990FAC3D3D6A17BAB3483F1 /* PikafishService.swift */,
 				14AFC80628C6ED48441B5DEE /* SituationChartView.swift */,
 				D20D256FDEA22B0B4E26F88F /* XiangqiBoardView.swift */,
 				5BC68CB647237D96AA108941 /* YisiXiangqiCoachApp.swift */,
 				D3A9120341B20E5418773811 /* AppIcon.png */,
-				3C75091F7640E5D2B10E4216 /* AppIconDark.png */,
+				3D7CE2C41BF2E2B4C9DDBC69 /* AppIconDark.png */,
 				4A965416918068E2EA465D78 /* pikafish.nnue */,
 				E090EADBFB50D7D38C4AD264 /* Info.plist */,
 			);
@@ -240,7 +249,7 @@
 /* Begin PBXResourcesBuildPhase section */
 		86F6FE2DD6E869C1842A14B3 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
 			2AA1EC5B3154FCAC2D91AFB5 /* AppIcon.png in Resources */,
-			A93408E6930566449BF87748 /* AppIconDark.png in Resources */,
+			4318114FF7457E334B1C3E06 /* AppIconDark.png in Resources */,
 			3D234ADC3FCACE4935C47F40 /* pikafish.nnue in Resources */,
 			4134C72EF01F92F012DF729B /* COPYING.txt in Resources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
@@ -248,10 +257,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		F612CD2E22E187AC48B5913C /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			310C6A622C36DC7121FE6E99 /* CloudAccountClient.swift in Sources */,
+			51F31323BCECC05844FAE53A /* CloudHubView.swift in Sources */,
+			F117EDA2DD46D0C0ACD36563 /* CloudLobbyModel.swift in Sources */,
 			DE156BDE6F096022B687C991 /* CoachViewModel.swift in Sources */,
 			FBD82B67A76725BA312E3C62 /* ContentView.swift in Sources */,
-				42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */,
-				A11B22C33D44E55F66778899 /* GameRecordIO.swift in Sources */,
+			5B22B5E151766F7282AA0890 /* GameRecordIO.swift in Sources */,
+			42B38D92D65B9FED8753C3E2 /* Models.swift in Sources */,
 			FC48FFB76D416262C3C85EE3 /* PikafishService.swift in Sources */,
 			95A27E5D54C3AC3DE8B21F06 /* SituationChartView.swift in Sources */,
 			384EB1FA93B5665BB74B6A40 /* XiangqiBoardView.swift in Sources */,
@@ -337,7 +349,6 @@
 			CODE_SIGN_STYLE = Automatic;
 			CURRENT_PROJECT_VERSION = 1;
 			DEVELOPMENT_TEAM = BKLF8453MJ;
-			GCC_OPTIMIZATION_LEVEL = 3;
 			GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", NDEBUG, IS_64BIT, USE_POPCNT, "USE_NEON=8");
 			HEADER_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/ThirdParty/Pikafish/src");
 			INFOPLIST_FILE = App/Info.plist;
@@ -357,7 +368,6 @@
 			CODE_SIGN_STYLE = Automatic;
 			CURRENT_PROJECT_VERSION = 1;
 			DEVELOPMENT_TEAM = BKLF8453MJ;
-			GCC_OPTIMIZATION_LEVEL = 3;
 			GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", NDEBUG, IS_64BIT, USE_POPCNT, "USE_NEON=8");
 			HEADER_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/ThirdParty/Pikafish/src");
 			INFOPLIST_FILE = App/Info.plist;

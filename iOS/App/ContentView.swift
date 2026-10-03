@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = CoachViewModel()
+    @StateObject private var lobby = CloudLobbyModel()
+    @State private var tab = 0
     @State private var boardFocusRequest = 0
     @State private var showsRecordSheet = false
     @State private var importsFile = false
@@ -35,6 +37,16 @@ struct ContentView: View {
     private var surfaceBorder: Color { isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08) }
 
     var body: some View {
+        TabView(selection: $tab) {
+            boardPage.tabItem { Label("棋盘", systemImage: "square.grid.3x3") }.tag(0)
+            CloudHubView(lobby: lobby, friendsPage: true)
+                .tabItem { Label("棋友", systemImage: "person.2") }.tag(1)
+            CloudHubView(lobby: lobby, friendsPage: false)
+                .tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(2)
+        }.tint(green).task { await lobby.restore() }
+    }
+
+    private var boardPage: some View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 Group {
