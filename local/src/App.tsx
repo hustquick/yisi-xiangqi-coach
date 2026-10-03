@@ -1762,7 +1762,7 @@ export default function Home() {
     workerRef.current?.postMessage({ type: "stop" }); setStartingPieces(imported.pieces); setStartingTurn(imported.turn); setHistory(nextHistory); setPositionScores(scores);
     setActivePly(target); setPieces(positionAtPly(nextHistory, target, imported.pieces)); setTurn(sideAfterPly(imported.turn, target)); setRecordTitle(imported.title || "导入棋局");
     setGameMode("local"); setSelected(null); setEngineLines([]); setSelectedEngineLines([]); setShowRecordPanel(false); setEngineState("thinking");
-    setRecordMessage(`已载入“${imported.title}”，共 ${nextHistory.length} 步；可从任意局面续走。`);
+    setRecordMessage(spectatorUpdate ? "" : `已载入“${imported.title}”，共 ${nextHistory.length} 步；可从任意局面续走。`);
   }
 
   async function importRecordFile(file: File) {
@@ -1946,7 +1946,6 @@ export default function Home() {
 
       <section className="workspace">
         <div className="board-wrap" ref={boardSectionRef}>
-          {network.clockPanel(boardFlipped?'red':'black')}
           <div className="board-top">
             <div className="history-tools"><button onClick={undo} disabled={network.active || activePly === 0} aria-label="悔棋">↶</button><button onClick={() => goToPly(activePly + 1)} disabled={network.active || activePly >= history.length} aria-label="前进">↷</button></div>
             <button className={`best-toggle ${showBestArrows ? "active" : ""}`} onClick={() => setShowBestArrows((value) => !value)} disabled={network.active || engineState !== "ready" || !candidates.length} aria-label="显示最优着法">优</button>
@@ -2130,7 +2129,7 @@ export default function Home() {
               <span key={label}>{label}</span>
             ))}
           </div>
-          {network.clockPanel(boardFlipped?'black':'red')}
+          {network.active && !network.watching && <div className="duel-clock-pair">{network.clockPanel(network.side)}{network.clockPanel(network.side==='red'?'black':'red')}</div>}
           {network.operations}
           <div className="board-hint">
             <span>●</span>
