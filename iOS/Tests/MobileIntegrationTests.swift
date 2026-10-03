@@ -1,9 +1,83 @@
 import XCTest
 import UIKit
 import SwiftUI
+import WebKit
 @testable import YisiXiangqiCoach
 
 @MainActor final class MobileIntegrationTests: XCTestCase {
+    func testCloudRecordReviewRunsNativeEngine() async throws {
+        let board = CoachViewModel()
+        let saved = CloudRecordCodec.encode(startFEN:board.fen,moves:["a3a4","a6a5"],title:"云端复盘验证")
+        try board.loadCloudRecord(saved,review:true)
+        XCTAssertEqual(board.activePly,0); XCTAssertEqual(board.history.count,2)
+        XCTAssertFalse(board.networkActive)
+        try await waitUntil({!board.globalLines.isEmpty},timeout:45)
+        XCTAssertNotEqual(board.currentScore,"—")
+        board.goToPly(2)
+        XCTAssertEqual(board.activePly,2)
+        try await waitUntil({!board.globalLines.isEmpty},timeout:45)
+        XCTAssertTrue(board.globalLines.allSatisfy { !($0.pv.isEmpty) })
+        board.configureNetwork(active:true,side:.red)
+        XCTAssertTrue(board.globalLines.isEmpty); XCTAssertFalse(board.isAnalyzing)
+        NSLog("MOBILE TEST: downloaded record replay and actual native engine analysis verified")
+    }
+    func testNativeAgainstPublishedWebClient() async throws {
+        let stamp = Int(Date().timeIntervalSince1970)
+        let native = CloudLobbyModel(client:CloudAccountClient(service:"com.yisi.xiangqicoach.tests.interop"))
+        let board = CoachViewModel(), game = CloudGameModel()
+        game.attach(board:board,lobby:native)
+        let config = WKWebViewConfiguration(); config.websiteDataStore = .nonPersistent()
+        let web = WKWebView(frame:CGRect(x:0,y:0,width:390,height:700),configuration:config)
+        let window = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first }.first)
+        window.addSubview(web)
+        game.transport.webView.frame = CGRect(x:0,y:0,width:2,height:2); window.addSubview(game.transport.webView)
+        defer { web.removeFromSuperview(); game.transport.webView.removeFromSuperview() }
+        func js(_ text: String) async throws -> Any? { try await web.evaluateJavaScript(text) }
+        func waitJS(_ expression: String) async throws {
+            let end = Date().addingTimeInterval(40)
+            while (try? await js(expression)) as? Bool != true {
+                if Date() > end { throw NSError(domain:"WebInterop",code:1,userInfo:[NSLocalizedDescriptionKey:"Web condition timed out: \(expression)"]) }
+                try await Task.sleep(for:.milliseconds(100))
+            }
+        }
+        await native.authenticate(name:"Native\(stamp)",password:"1",confirmation:"1",registering:true)
+        web.load(URLRequest(url:URL(string:"https://yisi-xiangqi-pwa.pages.dev/")!))
+        do {
+            try await waitJS("!!document.querySelector('[aria-label=\"网络账号\"]')")
+            _ = try await js("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='注册').click()")
+            try await waitJS("!!document.querySelector('[aria-label=\"确认密码\"]')")
+            _ = try await js("""
+            (()=>{const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+            for(const [label,value] of [['网络账号','Web\(stamp)'],['网络密码','1'],['确认密码','1']]){
+              const input=document.querySelector('[aria-label="'+label+'"]');setter.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));}
+            })()
+            """)
+            _ = try await js("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='注册').click()")
+            try await waitJS("!!document.querySelector('[aria-label=\"账户状态\"]')")
+            try await waitUntil({native.online})
+            _ = try await native.call("invite",["to":"Web\(stamp)","side":"red","minutes":15,"swapSides":true])
+            try await waitJS("!!document.querySelector('[aria-label=\"对战邀请\"]')")
+            _ = try await js("Array.from(document.querySelectorAll('[aria-label=\"对战邀请\"] button')).find(b=>b.textContent==='接受').click()")
+            try await waitUntil({game.connected})
+            board.tap(file:0,rank:6); game.publishSelection()
+            try await waitJS("!!document.querySelector('.piece.peer-selected')")
+            board.play("a3a4"); game.publishBoard()
+            try await waitJS("document.querySelector('.piece.red[aria-label=\"红兵\"]').style.top.startsWith('44.444')")
+            _ = try await js("document.querySelector('.piece.black[aria-label=\"黑卒\"]').click()")
+            try await waitUntil({board.peerSquare == "a6"})
+            _ = try await js("document.querySelector('[aria-label=\"棋盘 0,4\"]').click()")
+            try await waitUntil({board.activePly == 2})
+            XCTAssertTrue(board.canHumanMove,"Native red should regain its turn")
+            await game.operation("leave")
+            try await waitJS("!document.querySelector('[aria-label=\"对局操作区\"]')")
+            _ = try await js("(()=>{const el=document.querySelector('[aria-label=\"账户状态\"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,'logout');el.dispatchEvent(new Event('change',{bubbles:true}));})()")
+            await native.logout()
+            NSLog("MOBILE TEST: native/published web invitation, selection, bidirectional moves and leave verified")
+        } catch {
+            await game.operation("leave"); await native.logout()
+            throw error
+        }
+    }
     func testWaitingBoardKeepsFullColorAndCannotTouch() throws {
         let board = CoachViewModel()
         board.configureNetwork(active:true,side:.red)
