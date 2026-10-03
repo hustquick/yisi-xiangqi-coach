@@ -32,6 +32,7 @@ export function useNetworkGame(options: {
   const [inviteSide,setInviteSide] = useState<Side>('red');
   const [swapSides,setSwapSides] = useState(true);
   const [minutes,setMinutes]=useState(15);
+  const [matching,setMatching]=useState(false);
   const [active, setActive] = useState(false), [connected, setConnected] = useState(false);
   const [clock,setClock]=useState<{limit:number;used:Record<Side,number>;turn:Side;ended:boolean}|null>(null);
   useEffect(()=>{
@@ -148,6 +149,7 @@ export function useNetworkGame(options: {
     dc.current = null; pc.current = null; pending.current = []; setConnected(false);
   }
   function forcedSignOut(message:string) {
+    setMatching(false);
     forgetSession();
     events.current?.abort();clearConnection();game.current=null;session.current.token='';
     setActive(false);setWatching(null);setLogged(false);setInvitation(null);
@@ -215,7 +217,8 @@ export function useNetworkGame(options: {
     }
   }
   async function handle(m: any) {
-    if(m.type==='watch-state') {if(watchingRef.current===m.name) receiveWatch(m);}
+    if(m.type==='match-state') {setMatching(m.waiting);if(m.waiting)setStatus(`正在匹配 ${m.minutes} 分钟对局…`);}
+    else if(m.type==='watch-state') {if(watchingRef.current===m.name) receiveWatch(m);}
     else if (m.type === 'ready') {
       const resumed=m.games?.[0];
       if(!game.current && resumed) {
@@ -234,6 +237,7 @@ export function useNetworkGame(options: {
     else if (m.type === 'invite') setInvitation(m);
     else if (m.type === 'declined') setStatus('对手拒绝了邀请');
     else if (m.type === 'game') {
+      setMatching(false);
       setPeerOffline(false);setLinkLost(false);
       setWatching(null);
       setDrawOffer(false);setRoundEnding(false);
@@ -409,7 +413,9 @@ export function useNetworkGame(options: {
         <label>本局执棋<select aria-label="邀请执棋方" style={{font:'inherit',padding:8,minHeight:40}} value={inviteSide} onChange={e=>setInviteSide(e.target.value as Side)}><option value="red">执红</option><option value="black">执黑</option></select></label>
         <label>后续对局<select aria-label="下一局执棋设置" style={{font:'inherit',padding:8,minHeight:40}} value={swapSides?'swap':'keep'} onChange={e=>setSwapSides(e.target.value==='swap')}><option value="swap">交替执棋</option><option value="keep">一直执{inviteSide==='red'?'红':'黑'}</option></select></label>
       </div>}
-      <button onClick={()=>setShowFriends(true)}>邀请对战</button>
+      {!active && !watching && <button disabled={matching} onClick={()=>void api('/match/join',{minutes}).catch(e=>setStatus(e.message))}>自动匹配</button>}
+      {matching && <button onClick={()=>void api('/match/leave',{}).then(()=>{setMatching(false);setStatus('已取消匹配');}).catch(e=>setStatus(e.message))}>取消匹配</button>}
+      <button disabled={matching} onClick={()=>setShowFriends(true)}>邀请对战</button>
       {requests.map(request=><div key={request.name}>{request.nickname}（ID {request.id}）申请添加好友 <button onClick={()=>void api('/friends/respond',{name:request.name,accept:true}).catch(e=>setStatus(e.message))}>同意好友申请</button><button onClick={()=>void api('/friends/respond',{name:request.name,accept:false}).catch(e=>setStatus(e.message))}>拒绝好友申请</button></div>)}
       <button onClick={()=>void api('/history',{}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>对局历史</button>
       {matchStats && <section aria-label="双方历史战绩"><strong>与 {matchStats.opponent.nickname}（ID {matchStats.opponent.id}）的历史战绩</strong><p>共 {matchStats.total} 局 · 你 {matchStats.wins} 胜 / {matchStats.losses} 负 / {matchStats.draws} 和</p><button onClick={()=>void api('/history',{opponentId:matchStats.opponent.id}).then(result=>setHistory(result.games)).catch(e=>setStatus(e.message))}>查看双方历史对局</button></section>}

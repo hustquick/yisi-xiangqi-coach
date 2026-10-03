@@ -66,6 +66,14 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   const sessions = new Map(db.prepare('SELECT * FROM login_sessions').all().map(row=>[row.token,{name:row.name,expires:row.expires}])), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
   function deleteSession(key) {sessions.delete(key);db.prepare('DELETE FROM login_sessions WHERE token=?').run(key??'');}
   const offlineTimers=new Map();
+  const matchmaking=new Map();
+  function cancelMatch(name) { if(matchmaking.delete(name)) send(name,{type:'match-state',waiting:false}); }
+  function beginGame(red,black,minutes,swapSides=true) {
+    const game={id:randomUUID(),members:[red,black],red,black,swapSides,created:now(),limitMs:minutes*60000,baseLimitMs:minutes*60000};
+    games.set(game.id,game);initClock(game);startHistory(game);
+    for(const player of game.members) {cancelMatch(player);send(player,{type:'game',gameId:game.id,red,black,initiator:player===red});}
+    broadcastPresence();return game;
+  }
   const watching=new Map();
   function publishWatch(game) {
     for(const [observer,friend] of watching) {
@@ -192,6 +200,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         // One login per account, preventing competing clients from impersonating a side.
         // Replace the credential, not the game: a reconnecting player must be
         // able to resume the same board within the disconnect grace period.
+        cancelMatch(canonical);
         for (const [key, session] of sessions) if (session.name === canonical) deleteSession(key);
         const previous = streams.get(canonical);
         if (previous) { send(canonical, { type: 'signed-out' }); previous.end(); streams.delete(canonical); }
@@ -215,6 +224,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         req.on('close', () => {
           if(closed) return;
           if (streams.get(name) !== res) return;
+          cancelMatch(name);
           streams.delete(name);
           for (const g of games.values()) if (g.members.includes(name)) send(g.members.find(n => n !== name), { type: 'peer-offline', gameId: g.id });
           clearTimeout(offlineTimers.get(name));
@@ -232,6 +242,27 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       if (req.method !== 'POST') throw fail(404, '接口不存在');
       rateLimit(`api:${name}`, 240);
       const data = await body(req);
+      if(path==='/match/leave') {cancelMatch(name);json(res,200,{waiting:false});return;}
+      if(path==='/match/join') {
+        const minutes=data.minutes??15;
+        if(![5,10,15,30,45].includes(minutes)) throw fail(400,'局时设置错误');
+        if(!streams.has(name)) throw fail(409,'请先连接在线服务');
+        if(busy(name)) throw fail(409,'请先退出当前对局');
+        // Repeated taps do not reset queue order or create duplicate matches.
+        if(matchmaking.get(name)?.minutes===minutes) {json(res,200,{waiting:true,minutes});return;}
+        cancelMatch(name);
+        for(const [id,invite] of invites) if(invite.from===name || invite.to===name) {
+          invites.delete(id);send(invite.from,{type:'invite-expired',id});send(invite.to,{type:'invite-expired',id});
+        }
+        const opponent=[...matchmaking].find(([player,entry])=>player!==name && entry.minutes===minutes && streams.has(player) && !busy(player));
+        if(opponent) {
+          const [player]=opponent;
+          const red=randomBytes(1)[0]%2===0?name:player,black=red===name?player:name;
+          const game=beginGame(red,black,minutes);
+          json(res,200,{waiting:false,gameId:game.id});
+        } else {matchmaking.set(name,{minutes});send(name,{type:'match-state',waiting:true,minutes});json(res,200,{waiting:true,minutes});}
+        return;
+      }
       if(path==='/watch') {
         const friend=typeof data.name==='string'?nameKey(data.name):'';
         if(busy(name)) throw fail(409,'请先退出自己的对局');
@@ -324,6 +355,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       }
       if (path === '/ice') { json(res, 200, { ...profile(name),presence:invisible(name)?'invisible':'online',iceServers: connectionServers(name) }); return; }
       if (path === '/logout') {
+        cancelMatch(name);
         for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name);
         for (const [key, s] of sessions) if (s.name === name) deleteSession(key);
         streams.get(name)?.end(); json(res, 200, { ok: true }); return;
@@ -337,6 +369,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if(![5,10,15,30,45].includes(minutes)) throw fail(400,'局时设置错误');
         if(typeof swapSides!=='boolean') throw fail(400,'换边设置错误');
         const to = typeof data.to === 'string' ? nameKey(data.to) : '';
+        if(matchmaking.has(name) || matchmaking.has(to)) throw fail(409,'一方正在自动匹配，请先取消匹配');
         if (to === name || !visibleOnline(to) || !streams.has(name)) throw fail(400, '好友当前不在线，或账号不能邀请自己');
         if (busy(name) || busy(to)) throw fail(409, '一方已在对局中');
         if ([...invites.values()].some(invite => invite.from === name && invite.to === to && invite.expires > now())) throw fail(409, '邀请已发出，请等待对手回应');
@@ -350,12 +383,9 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         invites.delete(data.id);
         if (data.accept !== true) { send(invite.from, { type: 'declined', id: invite.id }); json(res, 200, { ok: true }); return; }
         if (!streams.has(invite.from) || !streams.has(name) || busy(name) || busy(invite.from)) throw fail(409, '对手已离线或开始另一场对局');
-        const game = { id: randomUUID(), members: [invite.from, name], red: invite.side==='black'?name:invite.from, black: invite.side==='black'?invite.from:name, swapSides:invite.swapSides, created: now() };
-        games.set(game.id, game);
-        game.limitMs=invite.minutes*60000;game.baseLimitMs=game.limitMs;initClock(game);
-        startHistory(game);
-        for (const player of game.members) send(player, { type: 'game', gameId: game.id, red: game.red, black: game.black, initiator: player === game.red });
-        broadcastPresence(); json(res, 200, { gameId: game.id }); return;
+        if(matchmaking.has(name) || matchmaking.has(invite.from)) throw fail(409,'一方正在自动匹配');
+        const game=beginGame(invite.side==='black'?name:invite.from,invite.side==='black'?invite.from:name,invite.minutes,invite.swapSides);
+        json(res, 200, { gameId: game.id }); return;
       }
       const game = games.get(data.gameId);
       if (!game || !game.members.includes(name)) throw fail(403, '无权操作该对局');

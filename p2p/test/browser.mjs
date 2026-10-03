@@ -245,6 +245,18 @@ try {
   await c.getByRole('combobox',{name:'账户状态',exact:true}).waitFor();
   await a.getByRole('status').filter({hasText:'账号已在其他设备登录，本端已退出'}).waitFor();
   assert.equal(await a.getByRole('combobox',{name:'账户状态',exact:true}).count(),0,'旧端自动退出登录');
+  for(const page of [b,c]) {
+    await page.getByLabel('每方局时',{exact:true}).selectOption('10');
+    await page.getByRole('button',{name:'自动匹配',exact:true}).click();
+  }
+  for(const page of [b,c]) await page.getByRole('status').filter({hasText:'对战已连接'}).waitFor();
+  const matchedRed=await red(b).isDisabled()?c:b;
+  const matchedBlack=matchedRed===b?c:b;
+  await move(matchedRed,'红兵','0,5');
+  await matchedBlack.waitForFunction(()=>document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
+  await matchedRed.getByText('对局操作',{exact:true}).click();
+  await matchedRed.getByRole('button',{name:'退出对局',exact:true}).click();
+  await matchedBlack.getByRole('status').filter({hasText:'对方已退出'}).waitFor();
   assert.deepEqual(errors, []);
   console.log('PASS registration + invitation + real WebRTC + refresh + password re-login + continued moves + reconnect + leave');
 } finally { await browser.close(); }
