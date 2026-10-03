@@ -210,7 +210,7 @@ try {
   await b.getByRole('button',{name:'同意加时',exact:true}).click();
   await b.getByRole('button',{name:'同意加时',exact:true}).waitFor({state:'detached'});
   await a.getByRole('status').filter({hasText:'各加时5分钟'}).waitFor();
-  await a.getByLabel('红方计时',{exact:true}).getByText(/剩余 19:/).waitFor();
+  await a.getByLabel('红方计时',{exact:true}).getByLabel('总剩余时间').filter({hasText:/19:/}).waitFor();
   await a.getByRole('button',{name:'悔棋',exact:true}).last().click();
   await b.waitForFunction(()=>document.activeElement?.textContent==='同意悔棋');
   await b.getByRole('button',{name:'拒绝悔棋',exact:true}).click();
@@ -257,7 +257,22 @@ try {
   const matchedBlack=matchedRed===b?c:b;
   await move(matchedRed,'红兵','0,5');
   await matchedBlack.waitForFunction(()=>document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
+  await move(matchedBlack,'黑卒','0,4');
+  await matchedRed.waitForFunction(()=>document.querySelector('.piece.black[aria-label="黑卒"]')?.getAttribute('style')?.includes('44.444'));
   await matchedRed.getByText('对局操作',{exact:true}).click();
+  await matchedRed.getByRole('button',{name:'提和',exact:true}).click();
+  await matchedBlack.getByRole('button',{name:'同意和棋',exact:true}).click();
+  for(const page of [matchedRed,matchedBlack]) await page.getByRole('button',{name:'再来一局',exact:true}).waitFor();
+  await matchedRed.getByRole('button',{name:'再来一局',exact:true}).click();
+  await matchedRed.waitForTimeout(1000);
+  assert.equal(await matchedBlack.getByRole('button',{name:'再来一局',exact:true}).count(),1,'单方确认不得开始下一局');
+  await matchedBlack.getByRole('button',{name:'再来一局',exact:true}).click();
+  for(const page of [matchedRed,matchedBlack]) {
+    await page.getByRole('button',{name:'再来一局',exact:true}).waitFor({state:'detached'});
+    await page.getByRole('status').filter({hasText:'对战已连接'}).waitFor();
+  }
+  assert.equal(await red(matchedBlack).isDisabled(),false,'下一局交换执棋');
+  if(!await matchedRed.getByRole('button',{name:'退出对局',exact:true}).isVisible()) await matchedRed.getByText('对局操作',{exact:true}).click();
   await matchedRed.getByRole('button',{name:'退出对局',exact:true}).click();
   await matchedBlack.getByRole('status').filter({hasText:'对方已退出'}).waitFor();
   assert.deepEqual(errors, []);

@@ -68,9 +68,9 @@ export function useNetworkGame(options: {
   const [requestFocus,setRequestFocus]=useState('');
   const operationsRef=useRef<HTMLElement|null>(null);
   useEffect(()=>{
-    if(!active || roundEnding) return;
+    if(!active) return;
     const frame=requestAnimationFrame(()=>{
-      const card=operationsRef.current?.querySelector<HTMLElement>(`[data-request="${requestFocus}"]`);
+      const card=operationsRef.current?.querySelector<HTMLElement>(`[data-request="${roundEnding?'rematch':requestFocus}"]`);
       card?.scrollIntoView({behavior:'smooth',block:'center'});
       card?.querySelector<HTMLButtonElement>('button')?.focus({preventScroll:true});
     });return()=>cancelAnimationFrame(frame);
@@ -228,6 +228,7 @@ export function useNetworkGame(options: {
         await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
         await signal('restart',{});await connect(session.current.name===resumed.red);
         setStatus('已恢复原对局，正在重新连接对手…');
+        if(resumed.result) {setRoundEnding(true);setStatus('本局已结束，双方同意后开始下一局');}
       } else if (game.current && !m.games?.some((g: { id: string }) => g.id === game.current?.gameId)) {
         clearConnection(); game.current = null; setActive(false); setStatus('对局已结束，棋谱留在本机');
       } else setStatus(game.current ? connected ? '对战已连接 · 双方局面一致' : '在线连接已恢复，可重连核对局面' : '已登录 · 等待邀请');
@@ -264,7 +265,8 @@ export function useNetworkGame(options: {
     else if(m.type==='undo-declined' && m.gameId===game.current?.gameId) {setStatus('对方拒绝悔棋');}
     else if(m.type==='draw-offer' && m.gameId===game.current?.gameId) {setDrawOffer(true);setRequestFocus('draw');setStatus('对方提和，请选择同意或拒绝');}
     else if(m.type==='draw-declined' && m.gameId===game.current?.gameId) {setStatus('对方拒绝提和，继续对局');}
-    else if(m.type==='round-finished' && m.gameId===game.current?.gameId) { setMatchStats(m.stats);setPeerSelected(null);setDrawOffer(false);setRoundEnding(true);setStatus(`${m.result==='draw'?'双方和棋':m.result==='red'?'红方获胜':'黑方获胜'}，5秒后按邀请设置开始下一局`); }
+    else if(m.type==='round-finished' && m.gameId===game.current?.gameId) { setMatchStats(m.stats);setPeerSelected(null);setDrawOffer(false);setRoundEnding(true);setStatus(`${m.result==='draw'?'双方和棋':m.result==='red'?'红方获胜':'黑方获胜'}，是否再来一局？双方同意后开始`); }
+    else if(m.type==='rematch-state' && m.gameId===game.current?.gameId) {setStatus(m.ready.includes(session.current.name)?'已同意下一局，等待对方确认':'对方希望再来一局，请确认或退出');}
     else if (['peer-left', 'expired'].includes(m.type) && m.gameId === game.current?.gameId) {
       if(m.stats) setMatchStats(m.stats);
       clearConnection(); game.current = null; setActive(false); setInvitation(null);
@@ -455,6 +457,7 @@ export function useNetworkGame(options: {
     }).catch(e=>setStatus(e.message));
   }
   const operations=active && <section ref={operationsRef} className="duel-operations" aria-label="对局操作区">
+    {roundEnding && <div className="duel-request" data-request="rematch" role="alert"><strong>{status}</strong><button onClick={()=>void api('/rematch',{gameId:game.current?.gameId}).catch(e=>setStatus(e.message))}>再来一局</button><button onClick={()=>void leave()}>退出</button></div>}
     {(peerOffline || linkLost) && <div role="alert" className="duel-request">{peerOffline ? '对方已断线，等待重连；5分钟内未恢复将结束对局。' : '与对方连接已中断，棋局已锁定；请等待恢复或点击重连。'}{peerOffline && connected && <small> 已建立的直连仍可继续行棋。</small>}</div>}
     {active && <details><summary>对局操作</summary><div>
       {!roundEnding && <button onClick={()=>void api('/time/offer',{gameId:game.current?.gameId}).then(()=>setStatus('已申请双方各加时5分钟，等待对方同意')).catch(e=>setStatus(e.message))}>申请加时</button>}
@@ -466,7 +469,18 @@ export function useNetworkGame(options: {
     {drawOffer && !roundEnding && responseCard('draw','对方提和','同意和棋','拒绝和棋')}
     {active && !connected && <button onClick={() => void signal('restart').then(() => connect(true)).catch(e => setStatus(e.message))}>重连并核对局面</button>}
   </section>;
-  const clockPanel=(color:Side)=>active && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{minHeight:54,fontSize:14,padding:'8px 12px',borderRadius:10,background:clock?.turn===color?'#e3efe5':'#f4f1e9',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontVariantNumeric:'tabular-nums'}}><strong>{color==='red'?'红方':'黑方'}</strong>{clock?.turn===color&&!clock.ended&&clock.stepRemaining!==undefined&&<b className={`step-seconds ${(clock.stepRemaining??0)<=5000?'step-urgent':''}`} aria-label="当前步剩余秒数">{Math.ceil(clock.stepRemaining/1000)}</b>}<span>{clock ? <>已用 {formatTime(clock.used[color])} · 剩余 {formatTime(clock.limit-clock.used[color])}</> : '计时同步中'}</span></div>;
+  const clockPanel=(color:Side)=>{
+    const moving=clock?.turn===color&&!clock.ended;
+    const urgent=moving&&(clock?.stepRemaining??Infinity)<=5000;
+    const remaining=clock?.stepRemaining;
+    return active && <div aria-label={`${color==='red'?'红':'黑'}方计时`} style={{padding:12,borderRadius:16,background:moving?'#e3efe5':'#f4f1e9',display:'flex',alignItems:'center',gap:12,fontVariantNumeric:'tabular-nums'}}>
+      <div style={{textAlign:'center',flexShrink:0}}><div style={{position:'relative',width:64,height:64,display:'grid',placeItems:'center'}}>
+        <svg width="64" height="64" style={{position:'absolute',inset:0,transform:'rotate(-90deg)'}} aria-hidden="true"><circle cx="32" cy="32" r="28" fill="none" stroke="#d6dfd8" strokeWidth="4"/><circle cx="32" cy="32" r="28" fill="none" stroke={urgent?'#c62828':'#176b45'} strokeWidth="4" strokeDasharray="176" strokeDashoffset={176*(1-(moving&&remaining!==undefined?Math.min(1,remaining/(clock?.stepLimit??30000)):0))}/></svg>
+        {moving&&remaining!==undefined?<b className={`step-seconds ${urgent?'step-urgent':''}`} aria-label="当前步剩余秒数">{Math.ceil(remaining/1000)}</b>:<strong style={{fontSize:24,color:color==='red'?'#b73a32':'#24362d'}}>{color==='red'?'红':'黑'}</strong>}
+      </div><strong aria-label="总剩余时间">{clock?formatTime(Math.max(0,clock.limit-clock.used[color])):'—'}</strong></div>
+      <div style={{minWidth:0}}><strong style={{overflowWrap:'anywhere'}}>{game.current?.[color]??(color==='red'?'红方':'黑方')}</strong><div style={{fontSize:12,color:'#778078',marginTop:4}}>{color==='red'?'红方':'黑方'} · 已用 {clock?formatTime(clock.used[color]):'—'}</div></div>
+    </div>;
+  };
   function formatTime(ms:number){const s=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
-  return { operations, peerSelected, clockPanel, active:active || !!watching, watching:!!watching, side, connected, sendMove, panel, logged, finishRound: (result: Side | 'draw')=>game.current ? api('/next-game',{gameId:game.current.gameId,result,content:latest.current.record?.()}).then(()=>setStatus('本局结束，双方确认后5秒按邀请设置开始下一局')) : Promise.resolve(), account: logged ? session.current.name : '', accountApi: api };
+  return { operations, peerSelected, clockPanel, active:active || !!watching, watching:!!watching, side, connected, sendMove, panel, logged, finishRound: (result: Side | 'draw')=>game.current ? api('/next-game',{gameId:game.current.gameId,result,content:latest.current.record?.()}).then(()=>setStatus('本局结束，双方同意后开始下一局')) : Promise.resolve(), account: logged ? session.current.name : '', accountApi: api };
 }

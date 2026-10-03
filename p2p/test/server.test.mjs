@@ -99,7 +99,9 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     await request('/draw/offer',{gameId:game.gameId},a.token);
     clock+=100;await request('/draw/respond',{gameId:game.gameId,accept:true,content},b.token);
     assert.equal((await request('/history',{},a.token)).games[0].result,'draw');
-    await new Promise(resolve=>setTimeout(resolve,5200));
+    await request('/rematch',{gameId:game.gameId},a.token);
+    assert.equal((await request('/history',{},a.token)).games[0].id,game.gameId,'单方同意不得开下一局');
+    await request('/rematch',{gameId:game.gameId},b.token);
     const next=(await request('/history',{},a.token)).games[0];
     assert.equal((await request('/clock',{gameId:next.id},a.token)).limit,900000,'下一局不继承临时加时');
     await request('/clock/move',{gameId:next.id,ply:1},b.token);
@@ -157,7 +159,9 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     assert.equal(history.games[0].result,'red');
     assert.equal(history.games[0].opponent.id,b.id);
     assert.deepEqual((await post('/history/get',{id:game.gameId},b.token)).content,content);
-    await new Promise(resolve=>setTimeout(resolve,5200));
+    await post('/rematch',{gameId:game.gameId},a.token);
+    assert.equal((await post('/history',{},a.token)).games.length,1);
+    await post('/rematch',{gameId:game.gameId},b.token);
     const next=(await post('/history',{},a.token)).games;
     assert.equal(next.length,2);
     assert.equal(next[0].side,'black');
@@ -175,7 +179,8 @@ test('非好友邀请、云端用时记录和自动交换先后手', async () =>
     clock+=100;
     await post('/next-game',{gameId:keepGame.gameId,result:'black'},a.token);
     await post('/next-game',{gameId:keepGame.gameId,result:'black'},b.token);
-    await new Promise(resolve=>setTimeout(resolve,5200));
+    await post('/rematch',{gameId:keepGame.gameId},a.token);
+    await post('/rematch',{gameId:keepGame.gameId},b.token);
     assert.equal((await post('/history',{},a.token)).games[0].side,'black','保持执棋方时不换边');
     const c=await post('/register',{name:'roundC',password:'1'});
     assert.equal((await post('/history',{},c.token)).games.length,0);

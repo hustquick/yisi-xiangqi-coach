@@ -124,7 +124,7 @@ final class CloudGameModel: ObservableObject {
             guard let game = lobby.game, let id = lobby.gameID else { if currentID != nil { leaveLocally() }; return }
             let newGame = id != currentID
             connected = false; connectionPrepared = false; pendingSignals = []
-            currentID = id; pendingPly = nil; ackTask?.cancel(); request = nil; roundResult = nil; stats = nil
+            currentID = id; pendingPly = nil; ackTask?.cancel(); request = nil; roundResult = game["result"] as? String; stats = nil
             board.configureNetwork(active:true,side:game["red"] as? String == lobby.account?.name ? .red : .black)
             if newGame { board.reset() }
             if let saved = game["content"] as? [String: Any] { do { try board.loadCloudRecord(saved) } catch { lock(error.localizedDescription); return } }
@@ -155,7 +155,9 @@ final class CloudGameModel: ObservableObject {
             case "round-finished":
                 request = nil; pendingPly = nil; ackTask?.cancel(); roundResult = value["result"] as? String
                 stats = value["stats"] as? [String: Any]; board.networkConnected = false
-                status = "本局结束，五秒后按邀请设置开始下一局"
+                status = "本局结束，是否再来一局？双方同意后开始"
+            case "rematch-state":
+                status = (value["ready"] as? [String] ?? []).contains(lobby.account?.name ?? "") ? "已同意下一局，等待对方确认" : "对方希望再来一局，请确认或退出"
             default: break
             }
         }

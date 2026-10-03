@@ -21,6 +21,10 @@ struct DuelOperationsView: View {
                     .id("duel-requests")
             }
             if let result = duel.roundResult {
+                HStack {
+                    Button("再来一局") { Task { await duel.operation("rematch") } }.buttonStyle(.borderedProminent)
+                    Button("退出") { Task { await duel.operation("leave") } }.buttonStyle(.bordered)
+                }
                 Text(result == "draw" ? "本局和棋" : result == board.networkSide.rawValue ? "本局获胜" : "本局失利").font(.headline)
                 if let stats = duel.stats {
                     Text("累计 \(stats["total"] as? Int ?? 0) 局 · \(stats["wins"] as? Int ?? 0) 胜 / \(stats["losses"] as? Int ?? 0) 负 / \(stats["draws"] as? Int ?? 0) 和")

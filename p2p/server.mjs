@@ -140,14 +140,15 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
     game.result=result;endHistory(game,result);
     game.endedAt=now();
     for(const player of game.members) send(player,{type:'round-finished',gameId:game.id,result,stats:matchup(player,game.members.find(n=>n!==player))});
-    game.nextTimer=setTimeout(()=>{
+    game.rematchReady=new Set();
+  }
+  function startRematch(game) {
       if(games.get(game.id)!==game) return;
       if(!game.members.every(player=>streams.has(player))) {closeGame(game,game.members.find(player=>!streams.has(player)));return;}
       games.delete(game.id);
       const next={id:randomUUID(),members:game.members,red:game.swapSides?game.black:game.red,black:game.swapSides?game.red:game.black,swapSides:game.swapSides,created:now()};
       next.limitMs=game.baseLimitMs??game.limitMs;games.set(next.id,next);initClock(next);next.baseLimitMs=next.limitMs;startHistory(next);
       for(const player of next.members) send(player,{type:'game',gameId:next.id,red:next.red,black:next.black,initiator:player===next.red});
-    },5000);
   }
   function rateLimit(key, max, window = 60_000) {
     const entry = limits.get(key);
@@ -221,7 +222,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         streams.set(name, res);
         clearTimeout(offlineTimers.get(name));offlineTimers.delete(name);
         for(const g of games.values()) if(g.members.includes(name)) send(g.members.find(n=>n!==name),{type:'peer-online',gameId:g.id});
-        send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ id:g.id,red:g.red,black:g.black,content:g.snapshot??null })) });
+        send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ id:g.id,red:g.red,black:g.black,content:g.snapshot??null,result:g.result??null,rematchReady:[...(g.rematchReady??[])] })) });
         broadcastPresence();
         for (const invite of invites.values()) if (invite.to === name && invite.expires > now()) send(name, { type: 'invite', ...invite });
         req.on('close', () => {
@@ -393,6 +394,13 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
       const game = games.get(data.gameId);
       if (!game || !game.members.includes(name)) throw fail(403, '无权操作该对局');
       const peer = game.members.find(n => n !== name);
+      if(path==='/rematch') {
+        if(!game.result) throw fail(409,'本局尚未结束');
+        game.rematchReady??=new Set();game.rematchReady.add(name);
+        for(const player of game.members)send(player,{type:'rematch-state',gameId:game.id,ready:[...game.rematchReady]});
+        if(game.rematchReady.size===2)startRematch(game);
+        json(res,200,{ok:true});return;
+      }
       if(!game.result && (clockState(game).used[game.clockTurn]>=game.limitMs || clockState(game).stepRemaining<=0)) finishGame(game,game.clockTurn==='red'?'black':'red');
       if(path==='/time/offer') {
         if(game.limitMs>=2700000) throw fail(409,'局时已达45分钟上限');
