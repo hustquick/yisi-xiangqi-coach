@@ -189,6 +189,13 @@ try {
   await a.getByRole('region',{name:'对局历史',exact:true}).getByText(/退出结束.*用时/).waitFor();
   await a.getByRole('button',{name:/^复盘分析/}).first().click();
   await a.getByRole('status').filter({hasText:'已载入'}).waitFor();
+  await c.getByRole('combobox',{name:'账户状态',exact:true}).selectOption('logout');
+  await c.getByLabel('网络账号',{exact:true}).fill(`test${stamp}a`);
+  await c.getByLabel('网络密码',{exact:true}).fill('1');
+  await c.getByRole('button',{name:'登录',exact:true}).click();
+  await c.getByRole('combobox',{name:'账户状态',exact:true}).waitFor();
+  await a.getByRole('status').filter({hasText:'账号已在其他设备登录，本端已退出'}).waitFor();
+  assert.equal(await a.getByRole('combobox',{name:'账户状态',exact:true}).count(),0,'旧端自动退出登录');
   assert.deepEqual(errors, []);
   console.log('PASS cloud registration + invitation + real WebRTC + two legal moves + reset lock + reconnect + leave');
 } finally { await browser.close(); }

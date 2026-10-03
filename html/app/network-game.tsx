@@ -110,10 +110,21 @@ export function useNetworkGame(options: {
     if (pc.current) { pc.current.onconnectionstatechange = null; pc.current.onicecandidate = null; pc.current.ondatachannel = null; pc.current.close(); }
     dc.current = null; pc.current = null; pending.current = []; setConnected(false);
   }
+  function forcedSignOut(message:string) {
+    events.current?.abort();clearConnection();game.current=null;session.current.token='';
+    setActive(false);setWatching(null);setLogged(false);setInvitation(null);
+    setDrawOffer(false);setUndoOffer(false);setTimeOffer(false);setHistory(null);setMatchStats(null);
+    setUsers([]);setRequests([]);setFoundFriend(null);setSearchResults([]);setFriendDetails(null);
+    setPassword('');setConfirmPassword('');setStatus(message);
+  }
   async function api(path: string, data: unknown) {
     const s = session.current;
+    const requestToken=s.token;
     const response = await fetch(s.url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify(data) });
-    const value = await response.json(); if (!response.ok) throw Object.assign(new Error(value.error ?? '连接失败'), { status: response.status }); return value;
+    const value = await response.json();
+    if(requestToken && requestToken!==session.current.token) throw new Error('登录状态已变更');
+    if(response.status===401 && !['/login','/register'].includes(path)) forcedSignOut('登录已失效，本端已退出；账号可能已在其他设备登录');
+    if (!response.ok) throw Object.assign(new Error(value.error ?? '连接失败'), { status: response.status }); return value;
   }
   function signal(kind: string, payload?: unknown) { return api('/signal', { gameId: game.current?.gameId, kind, payload }); }
   function bindChannel(channel: RTCDataChannel) {
@@ -210,7 +221,7 @@ export function useNetworkGame(options: {
       if(networkPanel.current) { networkPanel.current.open=true; networkPanel.current.scrollIntoView({behavior:'smooth',block:'center'}); }
     } else if (m.type === 'peer-offline' && m.gameId===game.current?.gameId) {setPeerOffline(true);setPeerSelected(null);setStatus('对方已断线，等待重连；5分钟内未恢复将结束对局');}
     else if(m.type==='peer-online' && m.gameId===game.current?.gameId) {setPeerOffline(false);setStatus('对方已重新上线');}
-    else if (m.type === 'signed-out') { events.current?.abort(); clearConnection(); game.current = null; setActive(false); setLogged(false); setStatus('账号已在其他设备登录'); }
+    else if (m.type === 'signed-out') forcedSignOut('账号已在其他设备登录，本端已退出');
   }
   async function subscribe() {
     events.current?.abort(); const controller = new AbortController(); events.current = controller;
@@ -218,7 +229,7 @@ export function useNetworkGame(options: {
     while (!controller.signal.aborted) {
     try {
     const response = await fetch(session.current.url + '/events', { headers: { Authorization: `Bearer ${session.current.token}` }, signal: controller.signal });
-    if (response.status === 401) { setLogged(false); setStatus('登录已过期，请重新登录'); controller.abort(); return; }
+    if (response.status === 401) { forcedSignOut('登录已失效，本端已退出；账号可能已在其他设备登录');controller.abort();return; }
     if (!response.ok || !response.body) throw new Error('在线连接失败，请重新登录');
     retry = 0;
     const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';

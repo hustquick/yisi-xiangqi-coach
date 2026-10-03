@@ -2,6 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSignalingServer } from '../server.mjs';
 
+test('新端登录挤下旧端且旧凭证不可再用',async()=>{
+  const server=createSignalingServer({database:':memory:'});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  const base=`http://127.0.0.1:${server.address().port}`;const controller=new AbortController();let events='';
+  const post=async(path,data,token='')=>{const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(data)});return {status:r.status,...await r.json()};};
+  try{
+    const old=await post('/register',{name:'singleDevice',password:'1'});
+    const stream=await fetch(base+'/events',{headers:{Authorization:`Bearer ${old.token}`},signal:controller.signal});
+    void stream.body.pipeTo(new WritableStream({write(chunk){events+=new TextDecoder().decode(chunk);}})).catch(()=>{});
+    assert.equal((await post('/login',{name:'singleDevice',password:'wrong'})).status,401);
+    assert.equal((await post('/history',{},old.token)).status,200,'错误密码不能挤掉旧端');
+    const fresh=await post('/login',{name:'singleDevice',password:'1'});
+    await new Promise(r=>setTimeout(r,30));assert.match(events,/signed-out/);
+    assert.equal((await post('/history',{},old.token)).status,401);
+    assert.equal((await post('/history',{},fresh.token)).status,200);
+  }finally{controller.abort();server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
 test('断线提示、重新上线与断线超时自动结束',async()=>{
   const server=createSignalingServer({database:':memory:',disconnectTimeoutMs:250});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
