@@ -6,6 +6,8 @@
 
 ## 最新版本下载
 
+桌面版打包工程位于 `desktop`；公共界面、引擎与资源位于 `local`。平台专用文件分别放在 `local/windows` 和 `local/macos`。双击桌面应用即可联网，无需安装 Node.js；构建下载见 [Desktop packages](https://github.com/hustquick/yisi-xiangqi-coach/actions/workflows/desktop.yml)。macOS 初版未公证，Windows 初版未代码签名。
+
 无需自行编译，前往 [最新发布页](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest) 下载：
 
 - [Android 安装包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-android-arm64.apk)：Android 8.0 及以上、ARM64，已签名的 Debug 侧载版，内置离线引擎。
