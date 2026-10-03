@@ -68,7 +68,7 @@
 
 .board-wrap{scroll-margin-top:12px}
 .board-top button:disabled{opacity:.3!important;color:#919991!important;cursor:not-allowed;box-shadow:none!important}
-.piece.peer-selected{box-shadow:0 0 0 5px rgba(39,129,175,.55),0 2px 5px rgba(0,0,0,.2)!important}
+.piece.peer-selected{outline:4px solid #1688ff;outline-offset:3px;box-shadow:0 0 0 7px rgba(255,255,255,.9),0 0 15px rgba(22,136,255,.65),0 2px 5px rgba(0,0,0,.2)!important;z-index:8}
 .duel-operations{margin-top:8px;color:var(--green)}
 .duel-operations summary{cursor:pointer;min-height:40px;padding:9px 14px;border:1px solid #c9d4c9;border-radius:10px;background:#edf3ed;font-weight:700}
 .duel-operations button{min-height:40px;padding:8px 12px;margin:6px 6px 0 0;border:1px solid #c9d4c9;border-radius:8px;background:#edf3ed;color:#245f43;font:inherit}

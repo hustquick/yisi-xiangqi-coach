@@ -324,9 +324,9 @@ struct ContentView: View {
                     Spacer()
                     candidateArrowToggle.disabled(viewModel.networkActive)
                     Spacer()
-                    Label("\(viewModel.sideToMove.title)走棋", systemImage: "circle.fill")
+                    if !viewModel.networkActive { Label("\(viewModel.sideToMove.title)走棋", systemImage: "circle.fill")
                         .font(.headline)
-                        .foregroundStyle(viewModel.sideToMove == .red ? red : ink)
+                        .foregroundStyle(viewModel.sideToMove == .red ? red : ink) }
                     Spacer()
                     Button { viewModel.toggleBoardPerspective() } label: {
                         Image(systemName: "arrow.up.arrow.down")
@@ -356,7 +356,13 @@ struct ContentView: View {
                 .background(side == .red ? red.opacity(0.15) : green.opacity(0.15),in:Circle())
             VStack(alignment:.leading,spacing:2) { Text(nickname).font(.subheadline.bold()).lineLimit(1); Text(side.title).font(.caption2).foregroundStyle(.secondary) }
             Spacer(minLength:4)
-            Text(duel.timeText(side:side)).font(.system(.caption,design:.monospaced)).lineLimit(1).minimumScaleFactor(0.8)
+            VStack(alignment:.trailing,spacing:2) {
+                Text(duel.remainingTime(side:side)).font(.system(size:28,weight:.semibold,design:.rounded)).monospacedDigit()
+                    .foregroundStyle(viewModel.sideToMove == side && duel.roundResult == nil ? green : .secondary)
+                    .padding(.horizontal,8).padding(.vertical,2)
+                    .background(viewModel.sideToMove == side && duel.roundResult == nil ? green.opacity(0.12) : .clear,in:RoundedRectangle(cornerRadius:8))
+                Text("已用 \(duel.usedTime(side:side))").font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+            }.accessibilityElement(children:.ignore).accessibilityLabel(duel.timeText(side:side))
         }.padding(10).background(surface,in:RoundedRectangle(cornerRadius:14))
     }
 

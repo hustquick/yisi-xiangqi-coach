@@ -153,6 +153,8 @@ try {
   const red = page => page.getByRole('button', { name: '红兵', exact: true }).first();
   await a.getByRole('button',{name:'红兵',exact:true}).first().click();
   await b.locator('.piece.peer-selected').waitFor();
+  const touchedStyle = await b.locator('.piece.peer-selected').evaluate(el => ({outline:getComputedStyle(el).outlineWidth,color:getComputedStyle(el).outlineColor,z:getComputedStyle(el).zIndex}));
+  assert.equal(touchedStyle.outline,'4px');assert.equal(touchedStyle.color,'rgb(22, 136, 255)');assert.equal(touchedStyle.z,'8');
   assert.equal(await b.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','对方能看到摸子');
   await c.locator('.piece.peer-selected').waitFor();
   assert.equal(await c.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','观战者能看到摸子');

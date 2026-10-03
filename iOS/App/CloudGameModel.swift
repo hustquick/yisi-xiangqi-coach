@@ -95,10 +95,26 @@ final class CloudGameModel: ObservableObject {
     func publishBoard() {
         guard let board, let lobby, let currentID, !board.networkWatching else { return }
         let content = board.cloudRecord, ply = board.activePly
+        let ownMove = board.sideToMove != board.networkSide
+        let result = board.gameOutcome != nil ? board.sideToMove.opposite.rawValue : nil
         Task {
-            if board.sideToMove != board.networkSide { _ = try? await lobby.call("clock/move",["gameId":currentID,"ply":ply,"content":content]) }
+            // Capture the mover before yielding: a fast peer reply can change
+            // sideToMove while this upload is waiting. HTTP arrival order can
+            // differ from ordered WebRTC, so retry a preceding-ply conflict.
+            if ownMove {
+                for attempt in 0..<6 {
+                    guard self.currentID == currentID else { return }
+                    do {
+                        _ = try await lobby.client.request("clock/move",payload:["gameId":currentID,"ply":ply,"content":content])
+                        break
+                    } catch let error as CloudAccountClient.APIError where error.status == 409 && attempt < 5 {
+                        try? await Task.sleep(for:.milliseconds(200))
+                    } catch { lock("云端落子登记失败，请重连核对：\(error.localizedDescription)"); return }
+                }
+            }
+            guard self.currentID == currentID else { return }
             _ = try? await lobby.call("watch/update",["gameId":currentID,"content":content])
-            if board.gameOutcome != nil { await lobby.action("next-game",["gameId":currentID,"result":board.sideToMove.opposite.rawValue,"content":content]) }
+            if let result { await lobby.action("next-game",["gameId":currentID,"result":result,"content":content]) }
         }
     }
     private func event(_ value: [String: Any]) {
@@ -207,9 +223,13 @@ final class CloudGameModel: ObservableObject {
         lobby?.watching = nil; board?.configureNetwork(active:false)
     }
     func timeText(side: XiangqiSide) -> String {
+        "已用 \(usedTime(side:side)) · 剩余 \(remainingTime(side:side))"
+    }
+    func usedTime(side: XiangqiSide) -> String { formatTime((clock["used"] as? [String: Double])?[side.rawValue] ?? 0) }
+    func remainingTime(side: XiangqiSide) -> String {
         let used = (clock["used"] as? [String: Double])?[side.rawValue] ?? 0
         let limit = clock["limit"] as? Double ?? 900000
-        func format(_ value: Double) -> String { let seconds = Int(max(0,value)/1000); return String(format:"%02d:%02d",seconds/60,seconds%60) }
-        return "已用 \(format(used)) · 剩余 \(format(limit-used))"
+        return formatTime(limit-used)
     }
+    private func formatTime(_ value: Double) -> String { let seconds = Int(max(0,value)/1000); return String(format:"%02d:%02d",seconds/60,seconds%60) }
 }

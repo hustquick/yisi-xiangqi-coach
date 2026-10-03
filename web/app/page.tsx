@@ -2057,7 +2057,7 @@ export default function Home() {
                   disabled={previewingBoard}
                   aria-label={`${p.side === "red" ? "红" : "黑"}${p.name}${targetRank === 0 ? "，最佳吃子落点" : targetRank > 0 ? "，可吃落点" : ""}`}
                   onClick={() => clickPoint(p.x, p.y)}
-                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
+                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${network.active && (network.watching || p.side!==network.side) && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? 'peer-selected' : ''} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
                   style={{
                     left: `${(boardFlipped ? 8 - p.x : p.x) * 12.5}%`,
                     top: `${(boardFlipped ? 9 - p.y : p.y) * 11.111}%`,
