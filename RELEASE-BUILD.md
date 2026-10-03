@@ -20,12 +20,12 @@ android/gradlew -p android assembleDebug --max-workers=2
 ## 离线 HTML
 
 ```sh
-npm --prefix local-web install
-npm --prefix local-web run build
+npm --prefix local install
+npm --prefix local run build
 ```
 
-保留 local-web 内的 JS、CSS、模型、图标和许可证，完整解压后打开 index.html。
-浏览器 Pikafish 的修改源码位于 local-web/source/pikafish，构建配置见 PIKAFISH-SOURCE.txt。
+保留 local 内的 JS、CSS、模型、图标和许可证，完整解压后打开 index.html。
+浏览器 Pikafish 的修改源码位于 local/source/pikafish，构建配置见 PIKAFISH-SOURCE.txt。
 
 ## 已验证
 

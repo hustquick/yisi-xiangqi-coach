@@ -3,7 +3,7 @@
 
 运行方法
 --------
-1. 将整个 local-web 文件夹完整解压到 Windows 或 macOS 电脑。
+1. 将整个 local 文件夹完整解压到 Windows 或 macOS 电脑。
 2. 使用 Microsoft Edge 或 Google Chrome 双击打开 index.html。
 3. 等待页面显示“已就绪”后即可使用。
 
@@ -16,7 +16,7 @@
 - engine-data.js 体积较大，因为它同时包含离线引擎和神经网络，请勿删除或编辑。
 - 推荐使用 64 位 Windows 10/11 及最新版 Edge/Chrome。
 - macOS 可直接运行；Linux 尚未验证。
-- 注册、邀请对战、观战、对局历史和云端棋谱：安装 Node.js 22 或更新版本后，双击“启动联网版.command”（macOS）或“启动联网版.bat”（Windows）；也可运行 npm run local。
+- 桌面应用直接启动，无需 Node.js。浏览器联网入口需要 Node.js 22 或更新版本：双击 macos/启动联网版.command 或 windows/启动联网版.bat；也可运行 npm run local。
 - 联网入口为 http://localhost:8080；云端账号与在线网页版互通，计算引擎仍在本机。
 - 直接打开时浏览器地址会以 file:/// 开头，这是正常现象。
 

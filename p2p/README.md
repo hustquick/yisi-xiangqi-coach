@@ -1,6 +1,6 @@
 # 中国象棋网络对战
 
-当前接入 `local-web` 和 `web` 两个网页客户端。安卓 / iOS 原生客户端尚未接入，不能把旧 APK 当作网络对战版。
+当前接入 `local` 和 `web` 两个网页客户端。安卓 / iOS 原生客户端尚未接入，不能把旧 APK 当作网络对战版。
 
 所有账号与好友操作都在“网络对战”模块内完成。注册需确认密码，成功后自动登录；登录不需要确认密码。支持九位数字 ID 和名称模糊搜索，好友申请需对方同意，也可邀请在线非好友。在线、离线和对局中状态实时推送；好友正在对局时可观看，但观众不能走棋或获取引擎提示。
 
@@ -8,7 +8,7 @@
 
 账号使用服务端 SQLite 保存，密码使用独立随机盐的 scrypt 哈希；密码只要求非空、最多 128 个字符，无复杂度要求，允许一个字符的短密码（更容易被猜中，不要复用重要账号密码）。登录令牌仅在客户端内存保存，12 小时有效；新端登录会使旧端退出。实时走棋走点对点，服务器保存账号、个人棋谱及对局历史，并接收观战所需的局面快照。
 
-`local-web` 的完整联网入口是 `npm --prefix local-web run local` 或该目录中的“启动联网版”脚本，使用 `http://localhost:8080/` 接入同一云端服务；计算引擎和 NNUE 仍在本机加载。直接双击 `index.html` 仅支持本地功能，不使用宽泛的 `Origin: null` 跨域授权。
+`local` 的完整联网入口是 `npm --prefix local run local` 或该目录中的“启动联网版”脚本，使用 `http://localhost:8080/` 接入同一云端服务；计算引擎和 NNUE 仍在本机加载。直接双击 `index.html` 仅支持本地功能，不使用宽泛的 `Origin: null` 跨域授权。
 
 ## 个人云端棋谱
 
@@ -16,7 +16,7 @@
 
 `https://yisi-xiangqi-pwa.pages.dev/` 发布与云主机相同的网页版应用。Pages 托管应用外壳、界面及样式；大型引擎资源和账号接口通过 HTTPS 从凤凰城加载，客户端部署配置不向玩家展示。后台允许该固定生产来源，不允许任意预览站点。账号与棋谱没有另行复制到 Cloudflare。
 
-发布前先在 `local-web` 执行 `npm run build`，再执行 `node p2p/build-pages.mjs`。最后运行 `wrangler pages deploy p2p/.pages-dist --project-name yisi-xiangqi-pwa --branch main`。生成目录只含明确列出的公开资源，不能发布项目根目录、账号数据库或服务环境配置。该版本依赖云端加载引擎，尚不保证旧 PWA 离线能力。
+发布前先在 `local` 执行 `npm run build`，再执行 `node p2p/build-pages.mjs`。最后运行 `wrangler pages deploy p2p/.pages-dist --project-name yisi-xiangqi-pwa --branch main`。生成目录只含明确列出的公开资源，不能发布项目根目录、账号数据库或服务环境配置。该版本依赖云端加载引擎，尚不保证旧 PWA 离线能力。
 
 公网网页的“棋谱与存档”提供“保存到云端”“我的云端棋谱”。登录后，可保存完整初始局面、走法、当前复盘位置和分析评分；从个人列表载入或下载 JSON，再通过本机导入功能载回。服务端每次查询均使用登录令牌的账号过滤，不接受客户端指定所有者。每账号最多 200 份，每份最多 24 KB，不覆盖旧存档；当前未提供删除或重命名。云存档不等于备份承诺，重要棋谱请同时下载。对局中只能保存或下载，不允许载入改变棋盘。其他网页客户端和原生端尚未接入云存档界面。
 
@@ -33,7 +33,7 @@ npm test
 P2P_ORIGINS=http://localhost:8080 npm start
 ```
 
-网页构建前先在 `p2p` 和对应客户端目录运行 `npm install`。`local-web` 执行 `npm run build`；联网时以 HTTP 本机服务或 HTTPS 托管网页，不能只双击文件保证联网功能。
+网页构建前先在 `p2p` 和对应客户端目录运行 `npm install`。`local` 执行 `npm run build`；联网时以 HTTP 本机服务或 HTTPS 托管网页，不能只双击文件保证联网功能。
 
 ## 已部署到 Oracle 主机
 

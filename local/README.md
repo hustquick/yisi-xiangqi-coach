@@ -1,4 +1,4 @@
-# 本地运行版（local-web）
+# 本地运行版（local）
 
 计算引擎和 NNUE 模型保存在本机；账号、好友、联网对局、对局历史和个人云端棋谱使用与在线网页版相同的云端服务和数据库。
 
@@ -6,8 +6,8 @@
 
 安装 Node.js 22 或更新版本。无需另外运行账号服务器，也不需要玩家填写服务器地址。
 
-- macOS：双击 `启动联网版.command`。
-- Windows：双击 `启动联网版.bat`。
+- macOS：双击 `macos/启动联网版.command`。
+- Windows：双击 `windows/启动联网版.bat`。
 - 或在当前文件夹运行 `npm run local`。
 
 浏览器自动打开 `http://localhost:8080/`。本地服务仅监听本机，不向局域网开放；保持启动窗口打开，关闭窗口即停止服务。8080 被占用时，先关闭原本地服务。Linux 的启动命令已提供，但尚未验证。
@@ -25,10 +25,13 @@
 在仓库根目录执行：
 
 ```sh
-npm --prefix local-web install
-npm --prefix local-web run build
-npm --prefix local-web test
-npm --prefix local-web run local
+npm --prefix local install
+npm --prefix local run build
+npm --prefix local test
+npm --prefix local run local
 ```
 
 本地运行版与 `web` 共享账号和网络对战模块，避免两套功能出现差异。
+# 桌面安装包
+
+桌面版与此目录的本地引擎、界面共用代码。macOS 应用位于 `macos/弈思象棋.app`；Windows 安装程序位于 `windows/`，运行后不需要 Node.js。安装包由 `desktop` 打包工程生成，GitHub Actions 的 Desktop packages 提供两个平台的下载。

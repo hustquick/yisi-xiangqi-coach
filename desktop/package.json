@@ -1,0 +1,12 @@
+{
+  "name": "yisi-xiangqi-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "prepare-assets": "node prepare-assets.mjs",
+    "build": "npm run prepare-assets && tauri build && node collect-packages.mjs",
+    "dev": "npm run prepare-assets && tauri dev"
+  },
+  "devDependencies": { "@tauri-apps/cli": "^2.0.0" }
+}

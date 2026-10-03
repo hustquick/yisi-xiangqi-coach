@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "弈思象棋",
+  "version": "1.0.0",
+  "identifier": "com.yisi.xiangqi.desktop",
+  "build": { "frontendDist": "../assets" },
+  "app": {
+    "windows": [{ "title": "弈思象棋", "width": 1100, "height": 850, "minWidth": 380, "minHeight": 600 }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' https://141.148.168.171; object-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"] }
+}

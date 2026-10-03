@@ -1,5 +1,5 @@
 .DS_Store
-/local-web/node_modules/
+/local/node_modules/
 /p2p/.pages-dist/
 
 # HTML dependencies and generated output
@@ -27,5 +27,12 @@
 # Environment and debug files
 .env*
 *.log
-/local-web.zip
+/local.zip
 /windowsHTML.zip
+/desktop/assets/
+/desktop/node_modules/
+/desktop/src-tauri/target/
+/local/macos/*.app/
+/local/macos/*.dmg
+/local/windows/*.exe
+/local/windows/*.msi

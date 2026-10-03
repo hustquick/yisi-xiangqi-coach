@@ -2,14 +2,14 @@
 
 ## 网络对战联调版
 
-网页客户端支持账号注册 / 登录、好友申请、邀请对战、好友观战和云端对局历史。账号、信令及中继服务已部署到 Oracle 云主机，通过 HTTPS 接入。`local-web` 使用相同云端账号和联网功能，但计算引擎从本机加载；运行方法见 [本地运行版说明](local-web/README.md)。**现有 Android APK / iOS 原生应用尚不包含网络对战，不将其标作已完成。** 运行方式、验证范围和部署边界见 [网络对战说明](p2p/README.md)。
+网页客户端支持账号注册 / 登录、好友申请、邀请对战、好友观战和云端对局历史。账号、信令及中继服务已部署到 Oracle 云主机，通过 HTTPS 接入。`local` 使用相同云端账号和联网功能，但计算引擎从本机加载；运行方法见 [本地运行版说明](local/README.md)。**现有 Android APK / iOS 原生应用尚不包含网络对战，不将其标作已完成。** 运行方式、验证范围和部署边界见 [网络对战说明](p2p/README.md)。
 
 ## 最新版本下载
 
 无需自行编译，前往 [最新发布页](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest) 下载：
 
 - [Android 安装包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-android-arm64.apk)：Android 8.0 及以上、ARM64，已签名的 Debug 侧载版，内置离线引擎。
-- [历史离线 HTML 完整包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-windows-html.zip)：仅对应旧发布版本，完整解压后打开其中的 `index.html`；旧包可能仍使用 `windowsHTML` 目录名。最新联网功能请使用仓库中的 `local-web` 或 [在线网页版](https://yisi-xiangqi-pwa.pages.dev/)。
+- [历史离线 HTML 完整包](https://github.com/hustquick/yisi-xiangqi-coach/releases/latest/download/yisi-xiangqi-windows-html.zip)：仅对应旧发布版本，完整解压后打开其中的 `index.html`；旧包可能仍使用 `windowsHTML` 目录名。最新联网功能请使用仓库中的 `local` 或 [在线网页版](https://yisi-xiangqi-pwa.pages.dev/)。
 - 发布页同时提供 `SHA256SUMS.txt`、对应源码包和构建说明。
 
 安装 APK 时需允许下载所用应用“安装未知应用”。HTML 请勿只复制 `index.html`，也不要在压缩包预览中直接打开。更新前建议先导出重要棋谱。
@@ -37,14 +37,14 @@
 - 一键切换红方或黑方视角，棋子、路数、落点和候选箭头会同步旋转
 - 支持悔棋、重开、走法记录、候选着详情和双击候选直接落子
 
-HTML、iOS、Android（以及离线 local-web 源码）统一使用 1320–3100 的十档参考 Elo，默认“业余九级（2100）”。这些名称用于模拟逐级挑战的学习体验，不是天天象棋官方等级换算，也不能与国际象棋 Elo 直接横向比较。限强仅用于电脑实际走棋；教练分析仍以完整强度给出候选。
+HTML、iOS、Android（以及离线 local 源码）统一使用 1320–3100 的十档参考 Elo，默认“业余九级（2100）”。这些名称用于模拟逐级挑战的学习体验，不是天天象棋官方等级换算，也不能与国际象棋 Elo 直接横向比较。限强仅用于电脑实际走棋；教练分析仍以完整强度给出候选。
 
 ## 仓库结构
 
 ```text
 .
 ├── web/        网页服务版源码，基于 React、vinext 和 Vite
-├── local-web/  本地运行版，浏览器内运行计算引擎；支持 Windows、macOS，Linux 尚未验证
+├── local/  本地运行版，浏览器内运行计算引擎；支持 Windows、macOS，Linux 尚未验证
 ├── iOS/        SwiftUI 应用、Objective-C++ 桥接和 Pikafish 源码
 ├── android/    Android 原生应用、JNI 桥接和 Gradle 工程
 └── README.md   项目总览与安装说明
