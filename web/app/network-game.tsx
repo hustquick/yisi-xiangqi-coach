@@ -40,11 +40,20 @@ export function useNetworkGame(options: {
   },[active]);
   useEffect(()=>{
     if(active && options.ply>0 && options.turn!==side && game.current)
-      void api('/clock/move',{gameId:game.current.gameId,ply:options.ply}).then(setClock).catch(e=>setStatus(e.message));
+      void api('/clock/move',{gameId:game.current.gameId,ply:options.ply,content:latest.current.record?.()}).then(setClock).catch(e=>setStatus(e.message));
   },[options.ply]);
   const [friendDetails, setFriendDetails] = useState<string | null>(null), [presenceBusy, setPresenceBusy] = useState(false);
   const [status, setStatus] = useState('未登录'), [logged, setLogged] = useState(false);
   const [watching,setWatching] = useState<string|null>(null);
+  const watchingRef=useRef(watching);watchingRef.current=watching;
+  const watchedContent=useRef('');
+  const watchRevision=useRef(0);
+  function receiveWatch(result:any) {
+    watchRevision.current++;
+    const encoded=JSON.stringify(result.content);
+    if(result.content && encoded!==watchedContent.current) {latest.current.watch?.(result.content);watchedContent.current=encoded;}
+    setPeerSelected(result.selected??null);
+  }
   const [drawOffer,setDrawOffer] = useState(false), [roundEnding,setRoundEnding] = useState(false);
   const [undoOffer,setUndoOffer]=useState(false);
   const [timeOffer,setTimeOffer]=useState(false);
@@ -66,13 +75,14 @@ export function useNetworkGame(options: {
     const timer=setInterval(publish,2000);publish();return()=>clearInterval(timer);
   },[active]);
   useEffect(()=>{
+    setPeerSelected(null);watchedContent.current='';
     if(!watching) return;
-    let stopped=false, pending=false, previous='';
+    let stopped=false, pending=false;
     const update=async()=>{
       if(pending) return;pending=true;
-      try { const result=await api('/watch',{name:watching});if(stopped)return;
-        const encoded=JSON.stringify(result.content);
-        if(result.content && encoded!==previous) { latest.current.watch?.(result.content);previous=encoded; }
+      const revision=watchRevision.current;
+      try { const result=await api('/watch',{name:watching});if(stopped || revision!==watchRevision.current)return;
+        receiveWatch(result);
       } catch(error) { if(!stopped){setWatching(null);setStatus((error as Error).message+'，已结束观战');} }
       finally{pending=false;}
     };
@@ -93,6 +103,27 @@ export function useNetworkGame(options: {
     return () => { if(previous?.isConnected) previous.focus({preventScroll:true}); };
   },[invitation?.id,active]);
   const session = useRef({ token: '', name: '', id: '', nickname: '', url: '', iceServers: [] as RTCIceServer[] });
+  function persistSession() {try{localStorage.setItem('yisi-network-session',JSON.stringify(session.current));}catch{}}
+  function forgetSession() {try{const saved=JSON.parse(localStorage.getItem('yisi-network-session')??'null');if(saved?.token===session.current.token)localStorage.removeItem('yisi-network-session');}catch{}}
+  useEffect(()=>{
+    if(window.location.protocol==='file:')return;
+    let stopped=false;
+    try {
+      const saved=JSON.parse(localStorage.getItem('yisi-network-session')??'null');
+      const configured=document.querySelector<HTMLMetaElement>('meta[name="yisi-network-endpoint"]')?.content;
+      const local=['localhost','127.0.0.1','[::1]'].includes(window.location.hostname);
+      const expected=new URL(configured || (local?'http://localhost:8790':window.location.origin)).origin;
+      if(saved?.token && saved.url===expected) {
+        session.current={...session.current,...saved};setStatus('正在恢复登录与对局…');
+        void api('/ice',{}).then(result=>{
+          if(stopped)return;session.current={...session.current,...result};persistSession();
+          setNickname(result.nickname??saved.nickname);setPresence(result.presence??'online');setLogged(true);
+          void subscribe();
+        }).catch(error=>{if(!stopped)setStatus(error.message);});
+      }
+    }catch{}
+    return()=>{stopped=true;};
+  },[]);
   const game = useRef<Game | null>(null), pc = useRef<RTCPeerConnection | null>(null);
   const dc = useRef<RTCDataChannel | null>(null), events = useRef<AbortController | null>(null);
   const pending = useRef<RTCIceCandidateInit[]>([]), serial = useRef(Promise.resolve());
@@ -101,6 +132,7 @@ export function useNetworkGame(options: {
     if(!active || !connected || !game.current || dc.current?.readyState!=='open') return;
     const point=options.turn===side && !roundEnding ? options.selected??null : null;
     try{dc.current.send(JSON.stringify({type:'selection',gameId:game.current.gameId,before:options.position,point}));}catch{}
+    if(options.turn===side && !roundEnding) void api('/watch/selection',{gameId:game.current.gameId,ply:options.ply,point}).catch(()=>{});
   },[options.selected?.[0],options.selected?.[1],options.position,active,connected,roundEnding]);
   function clearConnection() {
     setPeerSelected(null);
@@ -111,6 +143,7 @@ export function useNetworkGame(options: {
     dc.current = null; pc.current = null; pending.current = []; setConnected(false);
   }
   function forcedSignOut(message:string) {
+    forgetSession();
     events.current?.abort();clearConnection();game.current=null;session.current.token='';
     setActive(false);setWatching(null);setLogged(false);setInvitation(null);
     setDrawOffer(false);setUndoOffer(false);setTimeOffer(false);setHistory(null);setMatchStats(null);
@@ -177,8 +210,17 @@ export function useNetworkGame(options: {
     }
   }
   async function handle(m: any) {
-    if (m.type === 'ready') {
-      if (game.current && !m.games?.some((g: { id: string }) => g.id === game.current?.gameId)) {
+    if(m.type==='watch-state') {if(watchingRef.current===m.name) receiveWatch(m);}
+    else if (m.type === 'ready') {
+      const resumed=m.games?.[0];
+      if(!game.current && resumed) {
+        game.current={gameId:resumed.id,red:resumed.red,black:resumed.black,initiator:session.current.name===resumed.red};
+        setSide(session.current.name===resumed.red?'red':'black');setActive(true);setWatching(null);
+        latest.current.start();if(resumed.content)latest.current.watch?.(resumed.content);
+        await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+        await signal('restart',{});await connect(session.current.name===resumed.red);
+        setStatus('已恢复原对局，正在重新连接对手…');
+      } else if (game.current && !m.games?.some((g: { id: string }) => g.id === game.current?.gameId)) {
         clearConnection(); game.current = null; setActive(false); setStatus('对局已结束，棋谱留在本机');
       } else setStatus(game.current ? connected ? '对战已连接 · 双方局面一致' : '在线连接已恢复，可重连核对局面' : '已登录 · 等待邀请');
     }
@@ -196,7 +238,7 @@ export function useNetworkGame(options: {
       latest.current.start(); setActive(true); setInvitation(null); setStatus('正在建立点对点连接…');
       await connect(m.initiator);
     } else if (m.type === 'signal' && m.gameId === game.current?.gameId) {
-      if (m.kind === 'restart') { await connect(false); return; }
+      if (m.kind === 'restart') { await connect(session.current.name===game.current?.red); return; }
       const peer = pc.current; if (!peer) throw new Error('连接尚未初始化');
       if (m.kind === 'candidate') {
         if (peer.remoteDescription) await peer.addIceCandidate(m.payload); else pending.current.push(m.payload);
@@ -271,6 +313,7 @@ export function useNetworkGame(options: {
       session.current.url = endpoint.origin;
       const result = await api(register ? '/register' : '/login', { name, password });
       session.current = { ...session.current, ...result }; setNickname(result.nickname); setHistory(null); setPresence(register ? 'online' : result.presence ?? 'online'); setPassword(''); setConfirmPassword(''); setLogged(true); setStatus(register ? '注册成功，已登录并在线' : '已登录 · 等待邀请');
+      persistSession();
       void subscribe().catch(error => { if (error.name !== 'AbortError') setStatus(error.message); });
     } catch (error) { setStatus((error as Error).message); }
     finally { setAuthBusy(false); }
@@ -304,6 +347,7 @@ export function useNetworkGame(options: {
     setPresenceBusy(true);
     try {
       await api('/logout', {});
+      forgetSession();session.current.token='';
       events.current?.abort(); setLogged(false); setUsers([]); setFoundFriend(null); setFriendMessage('');
       session.current.token = ''; setStatus('已退出登录');
     } catch (error) { setStatus((error as Error).message); }

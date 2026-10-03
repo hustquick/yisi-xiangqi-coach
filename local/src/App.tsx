@@ -1145,7 +1145,7 @@ export default function Home() {
       }));
     },
     record: () => ({version:SAVED_GAME_VERSION,record:{title:recordTitle,pieces:startingPieces,turn:startingTurn,moves:history.map(move=>({from:move.from,to:move.to}))},activePly:0}),
-    review: saved => { installRecord(saved.record,{},0); setOutcomeOpen(false); },
+    review: saved => { installRecord(saved.record,{},0); setOutcomeOpen(false); setShowRecordPanel(true); },
     watch: saved => { installRecord(saved.record,{},saved.record.moves.length,true); setOutcomeOpen(false); },
     receive: (from, to) => {
       const piece = pieces.find(p => p.x === from[0] && p.y === from[1]);
@@ -1567,6 +1567,7 @@ export default function Home() {
   }, [gameMode, humanSide, turn, engineState, candidates, pieces, activePly, outcomeTitle]);
 
   function clickPoint(x: number, y: number) {
+    if (network.watching || (network.active && turn!==network.side)) return;
     if (previewingBoard) {
       setVariationPreview(null);
       setTimelinePreviewPly(null);
@@ -1995,7 +1996,7 @@ export default function Home() {
                 return (
                   <button
                     key={`${x}-${y}`}
-                    disabled={previewingBoard}
+                    disabled={previewingBoard || network.watching || (network.active && turn!==network.side)}
                     aria-label={`棋盘 ${x},${y}`}
                     className={`point ${rank === 0 ? "best-point" : rank > 0 ? "good-point" : !previewingBoard && selectedPiece && isLegal(selectedPiece, x, y, pieces) ? "legal" : ""}`}
                     style={{
@@ -2019,10 +2020,10 @@ export default function Home() {
               return (
                 <button
                   key={p.id}
-                  disabled={previewingBoard}
+                  disabled={previewingBoard || network.watching || (network.active && turn!==network.side)}
                   aria-label={`${p.side === "red" ? "红" : "黑"}${p.name}${targetRank === 0 ? "，最佳吃子落点" : targetRank > 0 ? "，可吃落点" : ""}`}
                   onClick={() => clickPoint(p.x, p.y)}
-                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${network.active && p.side!==network.side && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? 'peer-selected' : ''} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
+                  className={`piece ${p.side} ${!previewingBoard && selected === p.id ? "selected" : ""} ${network.active && (network.watching || p.side!==network.side) && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? 'peer-selected' : ''} ${targetRank === 0 ? "best-target" : targetRank > 0 ? "good-target" : ""}`}
                   title={network.active && network.peerSelected?.[0]===p.x && network.peerSelected?.[1]===p.y ? '对方正在摸子' : undefined}
                   style={{
                     left: `${(boardFlipped ? 8 - p.x : p.x) * 12.5}%`,

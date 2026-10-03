@@ -79,6 +79,12 @@ test('好友观战权限、提和、认输及棋谱失败仍能退出', async()=
     const content={version:1,record:{title:'观战测试',pieces:[],turn:'red',moves:[]},activePly:0};
     assert.equal((await request('/watch/update',{gameId:game.gameId,content},a.token)).status,200);
     assert.deepEqual((await request('/watch',{name:a.name},w.token)).content,content);
+    assert.equal((await request('/watch/selection',{gameId:game.gameId,ply:0,point:[0,6]},w.token)).status,403);
+    assert.equal((await request('/watch/selection',{gameId:game.gameId,ply:0,point:[0,6]},b.token)).status,409);
+    assert.equal((await request('/watch/selection',{gameId:game.gameId,ply:0,point:[0,6]},a.token)).status,200);
+    assert.deepEqual((await request('/watch',{name:a.name},w.token)).selected,[0,6]);
+    await request('/watch/selection',{gameId:game.gameId,ply:0,point:null},a.token);
+    assert.equal((await request('/watch',{name:a.name},w.token)).selected,null);
     assert.equal((await request('/resign',{gameId:game.gameId},w.token)).status,403);
     await request('/clock/move',{gameId:game.gameId,ply:1},a.token);
     await request('/clock/move',{gameId:game.gameId,ply:2},b.token);

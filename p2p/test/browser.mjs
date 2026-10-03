@@ -4,6 +4,10 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const errors = [];
 try {
   const a = await browser.newPage(), b = await browser.newPage(), c=await browser.newPage();
+  if(process.env.P2P_TEST_ENDPOINT) for(const page of [a,b,c]) await page.route(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080',async route=>{
+    const response=await route.fetch();
+    await route.fulfill({response,body:(await response.text()).replace('content="https://141.148.168.171"',`content="${process.env.P2P_TEST_ENDPOINT}"`)});
+  });
   for (const page of [a, b, c]) await page.addInitScript(relay => {
     const Original = window.RTCPeerConnection; window.__testPeers = [];
     const originalFetch = window.fetch;
@@ -25,6 +29,10 @@ try {
     };
   }, process.env.P2P_TEST_RELAY === '1');
   for (const page of [a, b, c]) page.on('pageerror', e => errors.push(e.message));
+  if(process.env.P2P_TEST_DEBUG) for(const page of [a,b,c]) {
+    page.on('response',async response=>{if(response.status()>=400 || response.url().endsWith('/watch/selection')) console.log(new URL(response.url()).pathname,response.status(),await response.text());});
+    page.on('requestfailed',request=>console.log('failed',new URL(request.url()).pathname,request.failure()));
+  }
   const stamp = Date.now();
   for (const [page, suffix] of [[a, 'a'], [b, 'b'],[c,'c']]) {
     await page.goto(process.env.P2P_TEST_PAGE ?? 'http://localhost:8080',{waitUntil:'domcontentloaded'});
@@ -139,18 +147,36 @@ try {
   await a.getByRole('button',{name:'红兵',exact:true}).first().click();
   await b.locator('.piece.peer-selected').waitFor();
   assert.equal(await b.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','对方能看到摸子');
+  await c.locator('.piece.peer-selected').waitFor();
+  assert.equal(await c.locator('.piece.peer-selected').getAttribute('aria-label'),'红兵','观战者能看到摸子');
+  const spectatorMoveStarted=Date.now();
   await a.getByRole('button',{name:'棋盘 0,5',exact:true}).click({force:true});
   await b.locator('.piece.peer-selected').waitFor({state:'detached'});
   await b.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('44.444'));
   await c.waitForFunction(() => document.querySelector('.piece.red[aria-label="红兵"]')?.getAttribute('style')?.includes('55.555'));
+  assert.ok(Date.now()-spectatorMoveStarted<2000,'观战落子即时推送，不再叠加两轮轮询');
+  await c.locator('.piece.peer-selected').waitFor({state:'detached'});
+  assert.equal(await a.getByRole('button',{name:'黑卒',exact:true}).first().isDisabled(),true,'行棋后不能摸对方棋子');
+  await a.getByRole('button',{name:'黑卒',exact:true}).first().dispatchEvent('click');
+  assert.equal(await a.locator('.piece.selected').count(),0,'非己方回合不能选子');
   const watched=await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style');
-  await move(c,'红兵','0,4');
+  assert.equal(await c.getByRole('button',{name:'红兵',exact:true}).first().isDisabled(),true,'观战棋子只读');
+  assert.equal(await c.getByRole('button',{name:'棋盘 0,4',exact:true}).isDisabled(),true,'观战落点只读');
+  await c.getByRole('button',{name:'红兵',exact:true}).first().dispatchEvent('click');
+  assert.equal(await c.locator('.piece.selected').count(),0,'观战者不能摸子');
   assert.equal(await c.getByRole('button',{name:'红兵',exact:true}).first().getAttribute('style'),watched,'观战者不能落子');
   const after = await red(a).getAttribute('style');
   assert.equal(await a.getByRole('button', { name: '重开', exact: true }).isDisabled(),true);
   assert.equal(await a.getByRole('button', { name: '悔棋', exact: true }).first().isDisabled(),true);
   assert.equal(await red(a).getAttribute('style'), after, '联网禁止单方重开');
-  await move(b, '黑卒', '0,4');
+  const blackClock=b.waitForResponse(response=>response.url().endsWith('/clock/move') && response.ok());
+  await move(b, '黑卒', '0,4');await blackClock;
+  await a.reload({waitUntil:'domcontentloaded'});
+  await a.getByRole('combobox',{name:'账户状态',exact:true}).waitFor();
+  await a.getByRole('status').filter({hasText:'对战已连接'}).waitFor();
+  assert.equal(await red(a).getAttribute('style'),after,'刷新后保持登录并恢复原棋局');
+  assert.equal(await a.getByRole('button',{name:'重开',exact:true}).isDisabled(),true,'刷新仍在原对局');
+  await a.getByText('对局操作',{exact:true}).click();
   for(const page of [a,b]) assert.equal(await page.getByRole('button',{name:'同意加时',exact:true}).count(),0,'未收到请求不显示同意按钮');
   await a.getByRole('button',{name:'申请加时',exact:true}).click();
   await b.waitForFunction(()=>document.activeElement?.textContent==='同意加时');

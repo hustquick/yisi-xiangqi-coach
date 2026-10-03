@@ -62,6 +62,14 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
   db.exec('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created INTEGER NOT NULL)');
   const sessions = new Map(), streams = new Map(), invites = new Map(), games = new Map(), limits = new Map();
   const offlineTimers=new Map();
+  const watching=new Map();
+  function publishWatch(game) {
+    for(const [observer,friend] of watching) {
+      if(!game.members.includes(friend)) continue;
+      if(!streams.has(observer) || !visibleOnline(friend) || !db.prepare('SELECT 1 FROM friends WHERE owner=? AND friend=?').get(observer,friend)) {watching.delete(observer);continue;}
+      send(observer,{type:'watch-state',name:friend,gameId:game.id,content:game.snapshot??null,selected:game.selected??null});
+    }
+  }
   let closed=false;
   const nameKey = name => name.normalize('NFC').toLowerCase();
   const invisible = name => !!db.prepare('SELECT invisible FROM presence_preferences WHERE name = ?').get(name)?.invisible;
@@ -193,7 +201,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         streams.set(name, res);
         clearTimeout(offlineTimers.get(name));offlineTimers.delete(name);
         for(const g of games.values()) if(g.members.includes(name)) send(g.members.find(n=>n!==name),{type:'peer-online',gameId:g.id});
-        send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ id:g.id,red:g.red,black:g.black })) });
+        send(name, { type: 'ready', name, games: [...games.values()].filter(g => g.members.includes(name)).map(g => ({ id:g.id,red:g.red,black:g.black,content:g.snapshot??null })) });
         broadcastPresence();
         for (const invite of invites.values()) if (invite.to === name && invite.expires > now()) send(name, { type: 'invite', ...invite });
         req.on('close', () => {
@@ -222,7 +230,8 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         if(!visibleOnline(friend) || !db.prepare('SELECT 1 FROM friends WHERE owner=? AND friend=?').get(name,friend)) throw fail(403,'只能观看在线好友的对局');
         const game=[...games.values()].find(g=>g.members.includes(friend));
         if(!game) throw fail(404,'好友对局已结束');
-        json(res,200,{gameId:game.id,content:game.snapshot??null});return;
+        watching.set(name,friend);
+        json(res,200,{gameId:game.id,content:game.snapshot??null,selected:game.selected??null});return;
       }
       if(path==='/history/get') {
         const row=db.prepare('SELECT r.content FROM game_records r JOIN game_history h ON h.id=r.game WHERE h.id=? AND (h.red=? OR h.black=?) AND h.ended IS NOT NULL').get(typeof data.id==='string'?data.id:'',name,name);
@@ -305,7 +314,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         broadcastPresence();
         json(res, 200, { friends: friendList(name), pending:path==='/friends/add' }); return;
       }
-      if (path === '/ice') { json(res, 200, { iceServers: connectionServers(name) }); return; }
+      if (path === '/ice') { json(res, 200, { ...profile(name),presence:invisible(name)?'invisible':'online',iceServers: connectionServers(name) }); return; }
       if (path === '/logout') {
         for(const game of [...games.values()]) if(game.members.includes(name)) closeGame(game,name);
         for (const [key, s] of sessions) if (s.name === name) sessions.delete(key);
@@ -376,6 +385,7 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
           game.clockPly--;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);
           game.snapshot.record.moves.pop();saveGameRecord(game,game.snapshot);
           for(const player of game.members) send(player,{type:'undo-applied',gameId:game.id,content:game.snapshot});
+          game.selected=null;publishWatch(game);
         } else send(peer,{type:'undo-declined',gameId:game.id});
         json(res,200,{ok:true});return;
       }
@@ -386,6 +396,9 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
             if(game.used[game.clockTurn]>=game.limitMs) finishGame(game,game.clockTurn==='red'?'black':'red');
             else {game.moved[game.clockTurn]=true;db.prepare(`UPDATE game_history SET ${game.clockTurn}_moved=1 WHERE id=?`).run(game.id);game.clockPly=data.ply;game.clockTurn=game.clockTurn==='red'?'black':'red';game.clockAt=now();armClock(game);}
           } else if(data.ply>game.clockPly) throw fail(409,'计时步数不一致');
+        }
+        if(path==='/clock/move' && data.content?.record?.moves?.length===game.clockPly) {
+          saveGameRecord(game,data.content);game.snapshot=data.content;game.selected=null;publishWatch(game);
         }
         json(res,200,clockState(game));return;
       }
@@ -405,11 +418,18 @@ export function createSignalingServer({ database = 'accounts.sqlite', origins = 
         else send(peer,{type:'draw-declined',gameId:game.id});
         json(res,200,{ok:true});return;
       }
+      if(path==='/watch/selection') {
+        if(game.result || name!==game[game.clockTurn] || data.ply!==game.clockPly) throw fail(409,'当前不能摸子');
+        const point=data.point;
+        if(point!==null && !(Array.isArray(point) && point.length===2 && Number.isInteger(point[0]) && Number.isInteger(point[1]) && point[0]>=0 && point[0]<9 && point[1]>=0 && point[1]<10)) throw fail(400,'摸子坐标错误');
+        game.selected=point;publishWatch(game);json(res,200,{ok:true});return;
+      }
       if(path==='/watch/update') {
         if(data.content?.record?.moves?.length!==game.clockPly) {json(res,200,{ok:true});return;}
         if(game.snapshot && data.content?.record?.moves?.length<game.snapshot.record.moves.length) {json(res,200,{ok:true});return;}
         saveGameRecord(game,data.content);
         game.snapshot=data.content;
+        publishWatch(game);
         json(res,200,{ok:true});return;
       }
       if (path === '/next-game') {
