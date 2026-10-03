@@ -48,7 +48,7 @@ struct ContentView: View {
             }.tabItem { Label("对弈", systemImage: "square.grid.3x3") }.tag(0)
             CloudHubView(lobby: lobby, friendsPage: true,review:reviewCloud,watch:{ name in Task { await duel.watch(name) } })
                 .tabItem { Label("棋友", systemImage: "person.2") }.tag(1)
-            CloudHubView(lobby: lobby, friendsPage: false,review:reviewCloud)
+            CloudHubView(lobby: lobby, friendsPage: false,review:reviewCloud,currentRecord:{viewModel.cloudRecord})
                 .tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(2)
         }.tint(green)
             .background(RTCTransportView(transport:duel.transport).frame(width:1,height:1).opacity(0.01).accessibilityHidden(true))
@@ -134,12 +134,12 @@ struct ContentView: View {
                 header
                 boardSection
                     .frame(maxWidth: min(760, size.width - 48, (size.height - 120) * 0.77))
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 14) {
+                if !viewModel.networkActive { LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 14) {
                     collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
                     collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
                     collapsible("对弈与分析设置", isExpanded: $settingsExpanded) { combinedSettings }
                     collapsible("棋谱与存档", isExpanded: $recordsExpanded) { recordToolbar }
-                }
+                } }
                 footer
             }
             .padding(.horizontal, 24)
@@ -158,7 +158,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                ScrollView {
+                if !viewModel.networkActive { ScrollView {
                     LazyVStack(spacing: 14) {
                         collapsible("教练分析", isExpanded: $analysisExpanded) { analysisPanel }
                         collapsible("局势图", isExpanded: $situationExpanded) { situationPanel }
@@ -169,7 +169,7 @@ struct ContentView: View {
                     .padding(.trailing, 6)
                     .padding(.bottom, 24)
                 }
-                .frame(width: min(440, size.width * 0.38))
+                .frame(width: min(440, size.width * 0.38)) }
             }
             .padding(.horizontal, 24)
         }

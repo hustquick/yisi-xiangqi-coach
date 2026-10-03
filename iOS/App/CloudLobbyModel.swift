@@ -79,6 +79,19 @@ final class CloudLobbyModel: ObservableObject {
     func refreshRecords() async {
         do { records = try await call("records/list")["records"] as? [[String: Any]] ?? [] } catch {}
     }
+    func saveRecord(_ content: [String: Any], title: String) async {
+        let title = title.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !engaged, !working, !title.isEmpty else { message = "请输入棋谱名称，且先结束当前网络对局"; return }
+        working = true; defer { working = false }
+        do {
+            _ = try CloudRecordCodec.decode(content)
+            var saved = content
+            var record = saved["record"] as? [String: Any] ?? [:]
+            record["title"] = title; saved["record"] = record
+            _ = try await call("records/save",["content":saved])
+            await refreshRecords(); message = "棋谱已保存到云端"
+        } catch { handleError(error) }
+    }
     func rename(_ value: String) async {
         do { _ = try await call("profile", ["nickname": value]); account = try await client.restore(); message = "名称已更新" } catch { handleError(error) }
     }

@@ -5,6 +5,7 @@ struct CloudHubView: View {
     var friendsPage: Bool
     var review: ([String: Any]) -> Void = { _ in }
     var watch: (String) -> Void = { _ in }
+    var currentRecord: () -> [String: Any] = { [:] }
     @State private var name = ""
     @State private var password = ""
     @State private var confirmation = ""
@@ -12,11 +13,13 @@ struct CloudHubView: View {
     @State private var newName = ""
     @State private var registering = false
     @State private var showRename = false
-    @State private var minutes = 15
-    @State private var side = "red"
-    @State private var swapSides = true
+    @AppStorage("cloud.invite.minutes") private var minutes = 15
+    @AppStorage("cloud.invite.side") private var side = "red"
+    @AppStorage("cloud.invite.swapSides") private var swapSides = true
     @State private var historySheet = false
     @State private var removeFriend: CloudLobbyModel.Person?
+    @State private var recordTitle = ""
+    @State private var showSaveRecord = false
 
     var body: some View {
         NavigationStack {
@@ -85,7 +88,7 @@ struct CloudHubView: View {
         }
     }
     private var friendsList: some View {
-        List {
+        ScrollViewReader { proxy in List {
             if let invitation = lobby.invitation {
                 Section("对战邀请") {
                     let profile = invitation["fromProfile"] as? [String: Any] ?? [:]
@@ -95,7 +98,7 @@ struct CloudHubView: View {
                         Button("接受对战") { Task { await lobby.action("respond",["id":invitation["id"] ?? "","accept":true]) } }.buttonStyle(.borderedProminent)
                         Button("拒绝") { Task { await lobby.action("respond",["id":invitation["id"] ?? "","accept":false]); lobby.invitation = nil } }.buttonStyle(.bordered)
                     }
-                }
+                }.id("incoming-invitation")
             }
             if !lobby.engaged {
                 Section("网络对战") {
@@ -146,6 +149,10 @@ struct CloudHubView: View {
                 ForEach(lobby.friends) { person in personRow(person, isFriend: true) }
             }
         }.refreshable { await lobby.refreshFriends() }
+            .onChange(of:lobby.invitation?["id"] as? String) { _,id in
+                if id != nil { withAnimation { proxy.scrollTo("incoming-invitation",anchor:.top) } }
+            }
+        }
     }
     private func identity(_ person: CloudLobbyModel.Person) -> some View {
         HStack {
@@ -201,6 +208,9 @@ struct CloudHubView: View {
                 }
             }
             Section("云端棋谱") {
+                Button { recordTitle = "我的棋谱"; showSaveRecord = true } label: {
+                    Label("保存当前棋谱到云端",systemImage:"icloud.and.arrow.up")
+                }.disabled(lobby.engaged || lobby.working)
                 if lobby.records.isEmpty { Text("暂无云端棋谱").foregroundStyle(.secondary) }
                 ForEach(Array(lobby.records.enumerated()), id: \.offset) { _, record in
                     Button(record["title"] as? String ?? "棋谱") {
@@ -215,17 +225,32 @@ struct CloudHubView: View {
             Button("保存") { Task { await lobby.rename(newName) } }
             Button("取消", role: .cancel) {}
         }
+        .alert("保存云端棋谱",isPresented:$showSaveRecord) {
+            TextField("棋谱名称",text:$recordTitle)
+            Button("保存") { Task { await lobby.saveRecord(currentRecord(),title:recordTitle) } }
+            Button("取消",role:.cancel) {}
+        }
     }
     private func historyRow(_ game: [String: Any]) -> some View {
         let opponent = game["opponent"] as? [String: Any] ?? [:]
         return VStack(alignment: .leading, spacing: 5) {
             Text("对阵 \(opponent["nickname"] as? String ?? "棋友")").font(.headline)
-            Text("\(game["result"] as? String ?? "") · 用时 \(Int((game["duration"] as? Double ?? 0) / 60000)) 分钟").font(.caption).foregroundStyle(.secondary)
+            Text("\(historyResult(game)) · 用时 \(historyDuration(game))").font(.caption).foregroundStyle(.secondary)
             if game["hasRecord"] as? Bool == true {
                 Button("复盘分析") {
                     Task { if let value = try? await lobby.call("history/get", ["id": game["id"] as? String ?? ""]), let content = value["content"] as? [String: Any] { review(content) } }
                 }.disabled(lobby.engaged)
             }
         }.padding(.vertical, 5)
+    }
+    private func historyResult(_ game: [String: Any]) -> String {
+        let result = game["result"] as? String ?? ""
+        if result == "draw" { return "和棋" }
+        if result == "red" || result == "black" { return result == game["side"] as? String ? "获胜" : "失利" }
+        return result == "进行中" ? result : "已结束"
+    }
+    private func historyDuration(_ game: [String: Any]) -> String {
+        let seconds = Int((game["duration"] as? Double ?? 0)/1000)
+        return String(format:"%02d:%02d",seconds/60,seconds%60)
     }
 }
