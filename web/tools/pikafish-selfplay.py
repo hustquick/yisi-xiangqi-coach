@@ -6,6 +6,7 @@ Builds a separate native engine with a read-only adjudication command.
 No changes to the app or its existing engine binary.
 """
 import argparse
+from collections import deque
 import csv
 import hashlib
 import json
@@ -83,9 +84,10 @@ std::string Engine::selfplay_status() {
 class Engine:
     def __init__(self, binary, network, args):
         self.q = queue.Queue()
+        self.recent = deque(maxlen=40)
         self.timeout = args.timeout
         self.p = subprocess.Popen([str(binary)], cwd=str(network.parent),
-                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   text=True, bufsize=1)
         threading.Thread(target=self.reader, daemon=True).start()
         try:
@@ -96,7 +98,7 @@ class Engine:
             settings = {"Threads": args.threads, "Hash": args.hash,
                         "MultiPV": 1, "Skill Level": 20,
                         "UCI_LimitStrength": "false" if args.full else "true",
-                        "EvalFile": str(network)}
+                        "EvalFile": network.name}
             if not args.full:
                 settings["UCI_Elo"] = 3100
             for k, v in settings.items():
@@ -111,6 +113,7 @@ class Engine:
     def reader(self):
         try:
             for line in self.p.stdout:
+                self.recent.append(line.strip())
                 self.q.put(line.strip())
         finally:
             self.q.put(None)
@@ -128,7 +131,7 @@ class Engine:
             except queue.Empty:
                 raise TimeoutError("Pikafish response timeout")
             if s is None:
-                raise RuntimeError("Pikafish exited unexpectedly")
+                raise RuntimeError(f"Pikafish exited (code {self.p.wait()}). Last engine output:\n" + "\n".join(self.recent))
             lines.append(s)
             if predicate(s):
                 return lines
